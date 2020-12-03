@@ -1,4 +1,5 @@
-torch
+torch==1.7.0
 pre-commit==2.8.2
-bsuite
-pytest
+bsuite==0.3.4
+pytest==6.1.2
+nlopt==2.6.2
