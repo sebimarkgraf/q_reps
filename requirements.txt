@@ -1,3 +1,4 @@
 torch
 pre-commit==2.8.2
 bsuite
+pytest
