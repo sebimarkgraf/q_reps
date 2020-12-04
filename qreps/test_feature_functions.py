@@ -24,10 +24,10 @@ def test_bellman_error():
 
 def test_bellman_error_batched():
     theta = torch.tensor([2, 2])
-    features = torch.tensor([[1, 2], [1, 2]])
-    features_next = torch.tensor([[2, 3], [2, 3]])
-    rewards = torch.tensor([3, 3])
+    features = torch.tensor([[1, 2], [1, 2], [1, 2]])
+    features_next = torch.tensor([[2, 3], [2, 3], [2, 3]])
+    rewards = torch.tensor([3, 3, 3])
 
-    result = torch.tensor([7, 7])
+    result = torch.tensor([7, 7, 7])
     bell_error_result = bellman_error_batched(theta, features, features_next, rewards)
     assert torch.equal(bell_error_result, result)

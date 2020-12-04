@@ -11,7 +11,7 @@ def bellman_error(
 def bellman_error_batched(
     theta: Tensor, features: Tensor, features_next: Tensor, reward: Tensor
 ):
-    return reward + theta.matmul(features_next) - theta.matmul(features)
+    return reward + theta.matmul(features_next.T) - theta.matmul(features.T)
 
 
 def feature_difference(features: Tensor, features_next: Tensor) -> Tensor:
