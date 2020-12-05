@@ -1,63 +1,87 @@
-from typing import Any, Callable, NamedTuple, Tuple
-
 import dm_env
+import nlopt
 import numpy as np
 import torch
 from bsuite.baselines import base
 from bsuite.baselines.utils import sequence
 from dm_env import specs
 
+from .reps_dual import reps_dual
+
 
 class REPS(base.Agent):
     """Feed-forward actor-critic agent."""
-
-    _buffer: sequence.Buffer
 
     def __init__(
         self,
         obs_spec: specs.Array,
         action_spec: specs.DiscreteArray,
-        optimizer: torch.Optimizer,
         sequence_length: int,
-        eta,
-        epsilon,
-        discount: float,
+        epsilon=1e-5,
+        dual_optimizer_algorithm=nlopt.LD_LBFGS,
     ):
-        self.eta = eta
-        self.epsilon = epsilon
+        print("Observations:", obs_spec)
+        print("Actions:", action_spec)
+        self.eta = torch.rand((1,))
+        self.epsilon = torch.tensor(epsilon)
         self.action_spec = action_spec
         self.obs_spec = obs_spec
         self.buffer = sequence.Buffer(obs_spec, action_spec, sequence_length)
-
-    def _dual_compute(self, eps, eta, theta, features, rewards):
-        F_mean = features.mean(0).view(1, -1)
-        R_over_eta = (rewards - features.mm(theta)) / eta
-        R_over_eta_max = R_over_eta.max()
-        Z = torch.exp(R_over_eta - R_over_eta_max)
-        Z_sum = Z.sum()
-        log_sum_exp = R_over_eta_max + torch.log(Z_sum / features.shape[0])
-
-        f = eta * (self.epsilon + log_sum_exp) + F_mean.mm(theta)
-
-        d_eta = eps + log_sum_exp - Z.t().mm(R_over_eta) / Z_sum
-        d_theta = F_mean - (Z.t().mm(features) / Z_sum)
-        return f.numpy(), np.append(d_eta.numpy(), d_theta.numpy())
-
-    def _dual(self, eta, epsilon, bellmann_error):
-        return (
-            eta
-            * epsilon
-            * torch.log(torch.mean(torch.exp(epsilon + 1 / eta * bellmann_error)))
-        )
-
-    def _bellmann_error(self, theta, features, features_next, rewards):
-        return torch.mean(rewards + theta.mm(features_next) - theta.mm(features))
+        self.policy = torch.ones((action_spec.num_values, np.prod(obs_spec.shape)))
+        self.theta = torch.rand(np.prod(obs_spec.shape)) + 1 / 2
+        self.dual_optimizer_algorithm = dual_optimizer_algorithm
 
     def select_action(self, timestep: dm_env.TimeStep) -> base.Action:
         """Selects actions using current policy in an on-policy setting"""
-        ## TODO: Implement action selection
-        action = self.action_spec.generate_value()
+        obs = torch.tensor(timestep.observation).flatten()
+        m = torch.distributions.Categorical(self.policy.mv(obs))
+        action = m.sample()
         return int(action)
+
+    def value_function(self, features):
+        return self.theta.dot(features)
+
+    def optimize_dual(self, trajectory: sequence.Trajectory):
+        observations, actions, rewards, _ = trajectory
+        features = torch.tensor(observations[:-1]).flatten(start_dim=1)
+        features_next = torch.tensor(observations[1:]).flatten(start_dim=1)
+        rewards = torch.tensor(rewards)
+
+        def eval_fn(x: np.array, grad: np.array):
+            # TODO: Switch to analytical gradients
+            eta = torch.tensor(
+                x[0], dtype=torch.get_default_dtype(), requires_grad=True
+            )
+            theta = torch.tensor(
+                x[1:], dtype=torch.get_default_dtype(), requires_grad=True
+            )
+            dual_val, d_eta, d_theta = reps_dual(
+                eta, theta, features, features_next, rewards, self.epsilon
+            )
+            dual_val.backward()
+
+            if grad.size > 0:
+                grad[0] = eta.grad.numpy()
+                grad[1:] = theta.grad.numpy()
+
+            print("Dual_loss:", dual_val.item())
+            return dual_val.item()
+
+        optimizer = nlopt.opt(self.dual_optimizer_algorithm, 1 + len(self.theta))
+        optimizer.set_lower_bounds([1e-2] + [-np.inf] * self.theta.shape[0])
+        optimizer.set_min_objective(eval_fn)
+        optimizer.set_ftol_abs(1e-2)
+
+        x0 = [1] + [1] * self.theta.shape[0]
+        params_best = optimizer.optimize(x0)
+        self.eta = torch.tensor(params_best[0])
+        self.theta = torch.from_numpy(params_best[1:]).view(-1, 1)
+
+    def update_policy(self, trajectory: sequence.Trajectory):
+        self.optimize_dual(trajectory)
+        # Determine Value function?
+
+        # Compute new policy
 
     def update(
         self,
@@ -85,7 +109,7 @@ class REPS(base.Agent):
           timestep = new_timestep
 
         """
-        self._buffer.append(timestep, action, new_timestep)
-        if self._buffer.full() or new_timestep.last():
-            trajectory = self._buffer.drain()
-            self._state = self._sgd_step(self._state, trajectory)
+        self.buffer.append(timestep, action, new_timestep)
+        if self.buffer.full() or new_timestep.last():
+            trajectory = self.buffer.drain()
+            self.update_policy(trajectory)
