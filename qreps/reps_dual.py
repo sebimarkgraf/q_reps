@@ -20,14 +20,15 @@ def reps_dual(
         - torch.log(torch.tensor(features.shape[0], dtype=torch.get_default_dtype()))
     )
 
-    bellman_sum = torch.sum(bellmann_error / eta)
+    # TODO: This can explode. Check for numerical stable variant
+    bellman_sum = torch.sum(torch.exp(bellmann_error / eta))
     d_eta = (
         epsilon
         + torch.logsumexp(bellmann_error / eta, 0)
         - torch.sum(
-            torch.exp(bellmann_error / eta - bellman_sum) / eta * bellmann_error
+            (torch.exp(bellmann_error / eta) * bellmann_error / eta) / bellman_sum
         )
     )
-    d_theta = (torch.exp(bellmann_error / eta - bellman_sum)).matmul(feat_diff)
+    d_theta = (torch.exp(bellmann_error / eta) / bellman_sum).matmul(feat_diff)
 
     return dual_val, d_eta, d_theta

@@ -18,7 +18,7 @@ class REPS(base.Agent):
         action_spec: specs.DiscreteArray,
         sequence_length: int,
         epsilon=1e-5,
-        dual_optimizer_algorithm=nlopt.LD_LBFGS,
+        dual_optimizer_algorithm=nlopt.LD_SLSQP,
     ):
         print("Observations:", obs_spec)
         print("Actions:", action_spec)
@@ -28,7 +28,7 @@ class REPS(base.Agent):
         self.obs_spec = obs_spec
         self.buffer = sequence.Buffer(obs_spec, action_spec, sequence_length)
         self.policy = torch.ones((action_spec.num_values, np.prod(obs_spec.shape)))
-        self.theta = torch.rand(np.prod(obs_spec.shape)) + 1 / 2
+        self.theta = torch.rand(np.prod(obs_spec.shape))
         self.dual_optimizer_algorithm = dual_optimizer_algorithm
 
     def select_action(self, timestep: dm_env.TimeStep) -> base.Action:
@@ -48,40 +48,40 @@ class REPS(base.Agent):
         rewards = torch.tensor(rewards)
 
         def eval_fn(x: np.array, grad: np.array):
-            # TODO: Switch to analytical gradients
-            eta = torch.tensor(
-                x[0], dtype=torch.get_default_dtype(), requires_grad=True
-            )
-            theta = torch.tensor(
-                x[1:], dtype=torch.get_default_dtype(), requires_grad=True
-            )
+            eta = torch.tensor(x[0], dtype=torch.get_default_dtype())
+            theta = torch.tensor(x[1:], dtype=torch.get_default_dtype())
             dual_val, d_eta, d_theta = reps_dual(
                 eta, theta, features, features_next, rewards, self.epsilon
             )
-            dual_val.backward()
 
             if grad.size > 0:
-                grad[0] = eta.grad.numpy()
-                grad[1:] = theta.grad.numpy()
+                grad[0] = d_eta.numpy()
+                grad[1:] = d_theta.numpy()
 
-            print("Dual_loss:", dual_val.item())
             return dual_val.item()
 
+        # SLSQP seems to work but L-BFGS fails without useful errors
         optimizer = nlopt.opt(self.dual_optimizer_algorithm, 1 + len(self.theta))
-        optimizer.set_lower_bounds([1e-2] + [-np.inf] * self.theta.shape[0])
+        optimizer.set_lower_bounds([1e-2] + [-np.inf] * len(self.theta))
         optimizer.set_min_objective(eval_fn)
-        optimizer.set_ftol_abs(1e-2)
+        optimizer.set_ftol_abs(1e-3)
+        optimizer.set_maxeval(3000)
 
         x0 = [1] + [1] * self.theta.shape[0]
         params_best = optimizer.optimize(x0)
+        print("New Params:", params_best)
+        print("Optimized dual value:", optimizer.last_optimum_value())
+        if optimizer.last_optimize_result() == nlopt.MAXEVAL_REACHED:
+            print("Stopped due to max eval iterations.")
+
+        # Update params from optimum
         self.eta = torch.tensor(params_best[0])
         self.theta = torch.from_numpy(params_best[1:]).view(-1, 1)
 
     def update_policy(self, trajectory: sequence.Trajectory):
         self.optimize_dual(trajectory)
-        # Determine Value function?
 
-        # Compute new policy
+        # TODO: Compute new policy
 
     def update(
         self,
