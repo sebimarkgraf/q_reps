@@ -1,13 +1,21 @@
+import logging
+from typing import Callable, Tuple, Union
+
 import dm_env
 import nlopt
 import numpy as np
 import torch
 from bsuite.baselines import base
 from bsuite.baselines.utils import sequence
-from dm_env import specs
+from torch import Tensor
 
-from .feature_functions import bellman_error, bellman_error_batched
+from .buffer import Buffer
+from .feature_functions import bellman_error_batched
+from .policy import Policy
 from .reps_dual import reps_dual
+
+logger = logging.getLogger("reps")
+logger.addHandler(logging.NullHandler())
 
 
 class REPS(base.Agent):
@@ -15,105 +23,83 @@ class REPS(base.Agent):
 
     def __init__(
         self,
-        obs_spec: specs.Array,
-        action_spec: specs.DiscreteArray,
+        feat_shape: Tuple,
         sequence_length: int,
+        policy: Policy,
+        feature_fn: Callable[[np.array], Tensor],
         epsilon=1e-5,
-        dual_optimizer_algorithm=nlopt.LD_SLSQP,
-        policy=None,
+        dual_optimizer_algorithm=nlopt.LD_MMA,
     ):
-        print("Observations:", obs_spec)
-        print("Actions:", action_spec)
+        logger.info(f"Observations: {feat_shape}")
+        logger.info(
+            f"Using Optimizer: {nlopt.algorithm_name(dual_optimizer_algorithm)}"
+        )
         self.eta = torch.rand((1,))
         self.epsilon = torch.tensor(epsilon)
-        self.action_spec = action_spec
-        self.obs_spec = obs_spec
-        obs_shape = obs_spec.shape
-        if obs_shape == ():
-            obs_shape = (1,)
-        self.buffer = sequence.Buffer(obs_spec, action_spec, sequence_length)
-        self.theta = torch.rand(obs_shape)
+        self.buffer = Buffer(sequence_length)
+        self.feature_fn = feature_fn
+        self.theta = torch.rand(feat_shape)
         self.dual_optimizer_algorithm = dual_optimizer_algorithm
         self.policy = policy
 
-    def select_action(self, timestep: dm_env.TimeStep) -> base.Action:
+    def select_action(self, timestep: dm_env.TimeStep) -> Union[int, np.array]:
         """Selects actions using current policy in an on-policy setting"""
-        # obs = torch.tensor(timestep.observation).flatten()
-        # m = torch.distributions.Categorical(self.policy.mv(obs))
-        observation = torch.tensor(timestep.observation).flatten()
-        action = self.policy.sample(observation)
-        return int(action)
+        action = self.policy.sample(torch.tensor(timestep.observation))
+        return action
 
-    def value_function(self, features):
+    def value_function(self, features: Tensor):
         return self.theta.dot(features)
 
-    def optimize_dual(self, trajectory: sequence.Trajectory):
-        observations, actions, rewards, _ = trajectory
-        features = torch.tensor(
-            observations[:-1], dtype=torch.get_default_dtype()
-        ).unsqueeze(
-            1
-        )  # .flatten(start_dim=1)
-        features_next = torch.tensor(
-            observations[1:], dtype=torch.get_default_dtype()
-        ).unsqueeze(
-            1
-        )  # .flatten(start_dim=1)
-        rewards = torch.tensor(rewards, dtype=torch.get_default_dtype())
-
+    def optimize_dual(self, features: Tensor, features_next: Tensor, rewards: Tensor):
         def eval_fn(x: np.array, grad: np.array):
-            eta = torch.tensor(x[0], dtype=torch.get_default_dtype())
-            theta = torch.tensor(x[1:], dtype=torch.get_default_dtype())
+            eta = torch.tensor(
+                x[0], dtype=torch.get_default_dtype(), requires_grad=True
+            )
+            theta = torch.tensor(
+                x[1:], dtype=torch.get_default_dtype(), requires_grad=True
+            )
             dual_val, d_eta, d_theta = reps_dual(
                 eta, theta, features, features_next, rewards, self.epsilon
             )
+            dual_val.backward()
 
             if grad.size > 0:
-                grad[0] = d_eta.numpy()
-                grad[1:] = d_theta.numpy()
+                grad[0] = eta.grad.numpy()
+                grad[1:] = theta.grad.numpy()
 
             return dual_val.item()
 
         # SLSQP seems to work but L-BFGS fails without useful errors
         optimizer = nlopt.opt(self.dual_optimizer_algorithm, 1 + len(self.theta))
-        optimizer.set_lower_bounds([1e-2] + [-np.inf] * len(self.theta))
+        optimizer.set_lower_bounds([1e-5] + [-np.inf] * len(self.theta))
+        optimizer.set_upper_bounds([1e8] + [np.inf] * len(self.theta))
         optimizer.set_min_objective(eval_fn)
-        optimizer.set_ftol_abs(1e-3)
+        optimizer.set_ftol_abs(1e-7)
         optimizer.set_maxeval(3000)
 
         x0 = [1] + [1] * self.theta.shape[0]
         params_best = optimizer.optimize(x0)
-        print("New Params:", params_best)
-        print("Optimized dual value:", optimizer.last_optimum_value())
+
+        logger.debug(f"New Params: {params_best}")
+        logger.debug(f"Optimized dual value: {optimizer.last_optimum_value()}")
         if optimizer.last_optimize_result() == nlopt.MAXEVAL_REACHED:
-            print("Stopped due to max eval iterations.")
+            logger.info("Stopped due to max eval iterations.")
 
         # Update params from optimum
         self.eta = torch.tensor(params_best[0])
         self.theta = torch.tensor(params_best[1:], dtype=torch.get_default_dtype())
 
     def update_policy(self, trajectory: sequence.Trajectory):
-        self.optimize_dual(trajectory)
-
         observations, actions, rewards, _ = trajectory
-        features = torch.tensor(
-            observations[:-1], dtype=torch.get_default_dtype()
-        ).unsqueeze(
-            1
-        )  # .flatten(start_dim=1)
-        features_next = torch.tensor(
-            observations[1:], dtype=torch.get_default_dtype()
-        ).unsqueeze(
-            1
-        )  # .flatten(start_dim=1)
+        features = self.feature_fn(observations[:-1])
+        features_next = self.feature_fn(observations[1:])
         rewards = torch.tensor(rewards, dtype=torch.get_default_dtype())
+        self.optimize_dual(features, features_next, rewards)
 
         # Calculate weights
-        print(self.theta, features.dtype, features_next.dtype, rewards.dtype)
         weights = torch.exp(
-            1
+            bellman_error_batched(self.theta, features, features_next, rewards)
             / self.eta
-            * bellman_error_batched(self.theta, features, features_next, rewards)
         )
 
         self.policy.fit(trajectory, weights)
@@ -147,4 +133,5 @@ class REPS(base.Agent):
         self.buffer.append(timestep, action, new_timestep)
         if self.buffer.full() or new_timestep.last():
             trajectory = self.buffer.drain()
+            logger.info(f"Mean reward: {np.mean(trajectory.rewards)}")
             self.update_policy(trajectory)
