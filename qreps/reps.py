@@ -13,6 +13,7 @@ from .buffer import Buffer
 from .feature_functions import bellman_error_batched
 from .policy import Policy
 from .reps_dual import reps_dual
+from .util import to_torch
 
 logger = logging.getLogger("reps")
 logger.addHandler(logging.NullHandler())
@@ -26,9 +27,10 @@ class REPS(base.Agent):
         feat_shape: Tuple,
         sequence_length: int,
         policy: Policy,
-        feature_fn: Callable[[np.array], Tensor],
+        val_feature_fn: Callable[[np.array], Tensor],
+        pol_feature_fn: Callable[[np.array], Tensor],
         epsilon=1e-5,
-        dual_optimizer_algorithm=nlopt.LD_MMA,
+        dual_optimizer_algorithm=nlopt.LD_SLSQP,
     ):
         logger.info(f"Observations: {feat_shape}")
         logger.info(
@@ -37,14 +39,17 @@ class REPS(base.Agent):
         self.eta = torch.rand((1,))
         self.epsilon = torch.tensor(epsilon)
         self.buffer = Buffer(sequence_length)
-        self.feature_fn = feature_fn
+        self.feature_fn = val_feature_fn
+        self.pol_feature_fn = pol_feature_fn
         self.theta = torch.rand(feat_shape)
         self.dual_optimizer_algorithm = dual_optimizer_algorithm
         self.policy = policy
+        self.stochastic = True
 
     def select_action(self, timestep: dm_env.TimeStep) -> Union[int, np.array]:
         """Selects actions using current policy in an on-policy setting"""
-        action = self.policy.sample(torch.tensor(timestep.observation))
+        obs_feat = self.pol_feature_fn([timestep.observation])[0]
+        action = self.policy.sample(obs_feat)
         return action
 
     def value_function(self, features: Tensor):
@@ -78,7 +83,12 @@ class REPS(base.Agent):
         optimizer.set_maxeval(3000)
 
         x0 = [1] + [1] * self.theta.shape[0]
-        params_best = optimizer.optimize(x0)
+
+        try:
+            params_best = optimizer.optimize(x0)
+        except:  # noqa:
+            params_best = x0
+            logger.warning("Stopped optimization due to error.")
 
         logger.debug(f"New Params: {params_best}")
         logger.debug(f"Optimized dual value: {optimizer.last_optimum_value()}")
@@ -86,23 +96,34 @@ class REPS(base.Agent):
             logger.info("Stopped due to max eval iterations.")
 
         # Update params from optimum
-        self.eta = torch.tensor(params_best[0])
-        self.theta = torch.tensor(params_best[1:], dtype=torch.get_default_dtype())
+        self.eta = to_torch(params_best[0])
+        self.theta = to_torch(params_best[1:])
+
+        return optimizer.last_optimum_value()
 
     def update_policy(self, trajectory: sequence.Trajectory):
         observations, actions, rewards, _ = trajectory
         features = self.feature_fn(observations[:-1])
         features_next = self.feature_fn(observations[1:])
-        rewards = torch.tensor(rewards, dtype=torch.get_default_dtype())
-        self.optimize_dual(features, features_next, rewards)
+        rewards = to_torch(rewards)
+        actions = to_torch(actions)
+
+        dual_loss = self.optimize_dual(features, features_next, rewards)
 
         # Calculate weights
         weights = torch.exp(
             bellman_error_batched(self.theta, features, features_next, rewards)
             / self.eta
         )
+        weights = torch.clamp(weights, 1e-75, np.inf)
+        # weights = weights / torch.mean(weights, 0)
 
-        self.policy.fit(trajectory, weights)
+        pol_features = self.pol_feature_fn(observations[:-1])
+        policy_loss = self.policy.fit(pol_features, actions, weights)
+
+        logger.info(
+            f"Mean reward: {torch.mean(rewards):.2f}, Policy Loss: {policy_loss:.5f}, Dual Loss: {dual_loss:.2f}"
+        )
 
     def update(
         self,
@@ -133,5 +154,4 @@ class REPS(base.Agent):
         self.buffer.append(timestep, action, new_timestep)
         if self.buffer.full() or new_timestep.last():
             trajectory = self.buffer.drain()
-            logger.info(f"Mean reward: {np.mean(trajectory.rewards)}")
             self.update_policy(trajectory)

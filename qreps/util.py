@@ -1,9 +1,7 @@
-import numpy as np
-from dm_env.specs import DiscreteArray
+import torch
 
 
-def num_from_spec(spec: DiscreteArray) -> int:
-    if spec.num_values:
-        return spec.num_values
-    else:
-        np.prod(spec.shape)
+def to_torch(x) -> torch.Tensor:
+    if isinstance(x, torch.Tensor):
+        return x
+    return torch.tensor(x, dtype=torch.get_default_dtype())

@@ -2,32 +2,45 @@ import logging
 
 import torch
 from bsuite.baselines.experiment import run
-from dm_control import suite
+from dm_control import suite, viewer
+from dm_control.rl.control import Environment
 
+from qreps.fourier_features import FourierFeatures
 from qreps.observation_transform import OrderedDictFlattenTransform
 from qreps.policy import GaussianMLP
 from qreps.reps import REPS
 
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
+
 FORMAT = "[%(asctime)s]: %(message)s"
-logging.basicConfig(level=logging.DEBUG, format=FORMAT)
+logging.basicConfig(level=logging.INFO, format=FORMAT)
+
+env: Environment = suite.load(domain_name="cartpole", task_name="balance")
 
 
-env = suite.load(domain_name="cartpole", task_name="swingup")
-
-
-def feature_fn(x):
-    return torch.tensor(x, dtype=torch.get_default_dtype())
-
+feature_fn = FourierFeatures(5, 75)
+policy = GaussianMLP(75, 1, minimizing_epochs=300)
 
 agent = OrderedDictFlattenTransform(
     REPS(
-        feat_shape=(5,),
-        sequence_length=50,
-        feature_fn=feature_fn,
+        feat_shape=(75,),
+        sequence_length=2000,
+        val_feature_fn=feature_fn,
+        pol_feature_fn=feature_fn,
         epsilon=1e-5,
-        policy=GaussianMLP((), ()),
+        policy=policy,
     )
 )
 
+run(agent, env, num_episodes=200)
 
-run(agent, env, num_episodes=5)
+policy.set_eval_mode(True)
+
+
+def eval_func(timestep):
+    action = agent.select_action(timestep)
+    return action
+
+
+viewer.launch(env, eval_func)
