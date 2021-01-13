@@ -15,24 +15,25 @@ for handler in logging.root.handlers[:]:
 FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-env: Environment = suite.load(domain_name="cartpole", task_name="balance")
+env: Environment = suite.load(domain_name="pendulum", task_name="swingup")
+print(env.observation_spec())
 
-
-feature_fn = FourierFeatures(5, 75)
+feature_fn = FourierFeatures(3, 75)
 policy = GaussianMLP(75, 1, minimizing_epochs=300)
 
 agent = OrderedDictFlattenTransform(
     REPS(
         feat_shape=(75,),
-        sequence_length=2000,
+        sequence_length=1000,
         val_feature_fn=feature_fn,
         pol_feature_fn=feature_fn,
         epsilon=1e-5,
         policy=policy,
-    )
+    ),
+    ["orientation", "velocity"],
 )
 
-run(agent, env, num_episodes=10)
+run(agent, env, num_episodes=10000)
 
 policy.set_eval_mode(True)
 

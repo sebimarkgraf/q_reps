@@ -5,7 +5,7 @@ import torch
 from bsuite.baselines.experiment import run
 from bsuite.utils import gym_wrapper
 
-from qreps.policy import CategoricalMLP, DiscreteStochasticPolicy, GaussianMLP
+from qreps.policy import DiscreteStochasticPolicy
 from qreps.reps import REPS
 
 for handler in logging.root.handlers[:]:
@@ -33,17 +33,17 @@ def pol_feature_fn(x):
 
 agent = REPS(
     feat_shape=(obs_num,),
-    sequence_length=500,
+    sequence_length=20,
     val_feature_fn=feature_fn,
     pol_feature_fn=pol_feature_fn,
-    epsilon=1e-7,
+    epsilon=1e-12,
     policy=DiscreteStochasticPolicy(obs_num, env.action_spec().num_values),
 )
 
 
-for i in range(3):
+for i in range(20):
     print("Iteration", i)
-    run(agent, env, num_episodes=500)
+    run(agent, env, num_episodes=50)
 
     timestep = env.reset()
     while not timestep.last():

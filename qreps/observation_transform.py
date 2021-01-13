@@ -5,11 +5,13 @@ from bsuite.baselines.base import Action
 
 
 class OrderedDictFlattenTransform(base.Agent):
-    def __init__(self, agent: base.Agent):
+    def __init__(self, agent: base.Agent, identifiers: list):
         self._agent = agent
+        self.identifiers = identifiers
 
     def obs_transform(self, observation):
-        return np.concatenate((observation["position"], observation["velocity"]))
+        arrays = [observation[identifier] for identifier in self.identifiers]
+        return np.concatenate(arrays)
 
     def select_action(self, timestep: dm_env.TimeStep) -> base.Action:
         timestep_1 = dm_env.TimeStep(
