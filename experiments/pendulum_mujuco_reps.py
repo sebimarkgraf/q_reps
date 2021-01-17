@@ -3,6 +3,7 @@ import logging
 from bsuite.baselines.experiment import run
 from dm_control import suite, viewer
 from dm_control.rl.control import Environment
+from torch.utils.tensorboard import SummaryWriter
 
 from qreps.fourier_features import FourierFeatures
 from qreps.observation_transform import OrderedDictFlattenTransform
@@ -17,9 +18,12 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 env: Environment = suite.load(domain_name="pendulum", task_name="swingup")
 print(env.observation_spec())
+print(env.action_spec())
+
+writer = SummaryWriter(comment="_pendulum_reps")
 
 feature_fn = FourierFeatures(3, 75)
-policy = GaussianMLP(75, 1, minimizing_epochs=300)
+policy = GaussianMLP(75, 1, minimizing_epochs=300, action_min=-1, action_max=1)
 
 agent = OrderedDictFlattenTransform(
     REPS(
@@ -29,6 +33,7 @@ agent = OrderedDictFlattenTransform(
         pol_feature_fn=feature_fn,
         epsilon=1e-5,
         policy=policy,
+        writer=writer,
     ),
     ["orientation", "velocity"],
 )

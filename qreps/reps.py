@@ -8,6 +8,7 @@ import torch
 from bsuite.baselines import base
 from bsuite.baselines.utils import sequence
 from torch import Tensor
+from torch.utils.tensorboard import SummaryWriter
 
 from .buffer import Buffer
 from .feature_functions import bellman_error_batched
@@ -31,6 +32,7 @@ class REPS(base.Agent):
         pol_feature_fn: Callable[[np.array], Tensor],
         epsilon=1e-5,
         dual_optimizer_algorithm=nlopt.LD_SLSQP,
+        writer: SummaryWriter = None,
     ):
         logger.info(f"Observations: {feat_shape}")
         logger.info(
@@ -45,6 +47,8 @@ class REPS(base.Agent):
         self.dual_optimizer_algorithm = dual_optimizer_algorithm
         self.policy = policy
         self.stochastic = True
+        self.writer = writer
+        self.iter = 0
 
     def select_action(self, timestep: dm_env.TimeStep) -> Union[int, np.array]:
         """Selects actions using current policy in an on-policy setting"""
@@ -102,13 +106,14 @@ class REPS(base.Agent):
         return optimizer.last_optimum_value()
 
     def update_policy(self, trajectory: sequence.Trajectory):
-        observations, actions, rewards, _ = trajectory
+        observations, actions, rewards, discounts = trajectory
         features = self.feature_fn(observations[:-1])
         features_next = self.feature_fn(observations[1:])
         rewards = to_torch(rewards)
+        discounted_rewards = to_torch(rewards * discounts)
         actions = to_torch(actions)
 
-        dual_loss = self.optimize_dual(features, features_next, rewards)
+        dual_loss = self.optimize_dual(features, features_next, discounted_rewards)
 
         # Calculate weights
         weights = torch.exp(
@@ -116,7 +121,7 @@ class REPS(base.Agent):
             / self.eta
         )
         weights = torch.clamp(weights, 1e-75, np.inf)
-        # weights = weights / torch.mean(weights, 0)
+        weights = weights / torch.mean(weights, 0)
 
         pol_features = self.pol_feature_fn(observations[:-1])
         policy_loss = self.policy.fit(pol_features, actions, weights)
@@ -124,6 +129,11 @@ class REPS(base.Agent):
         logger.info(
             f"Mean reward: {torch.mean(rewards):.2f}, Policy Loss: {policy_loss:.5f}, Dual Loss: {dual_loss:.2f}"
         )
+        if self.writer is not None:
+            self.writer.add_scalar("train/mean_reward", torch.mean(rewards), self.iter)
+            self.writer.add_scalar("train/policy_loss", policy_loss, self.iter)
+            self.writer.add_scalar("train/dual_loss", dual_loss, self.iter)
+            self.writer.add_histogram("train/actions", actions, self.iter)
 
     def update(
         self,
@@ -155,3 +165,4 @@ class REPS(base.Agent):
         if self.buffer.full() or new_timestep.last():
             trajectory = self.buffer.drain()
             self.update_policy(trajectory)
+            self.iter += 1

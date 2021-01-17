@@ -26,9 +26,13 @@ class DiscreteStochasticPolicy(Policy):
     def __init__(self, n_states: int, n_actions: int):
         self._policy = torch.ones((n_states, n_actions))
         self._policy /= torch.sum(self._policy, 1, keepdim=True)
+        self._eval = False
 
     def sample(self, observation):
         """Expect observation to just be the state"""
+        if self._eval:
+            return int(torch.argmax(self._policy[observation]).item())
+
         m = torch.distributions.Categorical(self._policy[observation])
         return int(m.sample())
 
@@ -42,6 +46,9 @@ class DiscreteStochasticPolicy(Policy):
 
         # FIXME: Return real loss
         return 0
+
+    def set_eval_mode(self, enabled: bool):
+        self._eval = enabled
 
 
 class CategoricalMLP(Policy, torch.nn.Module):
@@ -84,7 +91,15 @@ class CategoricalMLP(Policy, torch.nn.Module):
 
 
 class GaussianMLP(Policy, torch.nn.Module):
-    def __init__(self, obs_shape, act_shape, minimizing_epochs=300, lr=1e-2):
+    def __init__(
+        self,
+        obs_shape,
+        act_shape,
+        action_max,
+        action_min,
+        minimizing_epochs=300,
+        lr=1e-2,
+    ):
         super(GaussianMLP, self).__init__()
         self.minimizing_epochs = minimizing_epochs
         self._mu = torch.nn.Linear(obs_shape, act_shape, bias=False)
@@ -92,6 +107,8 @@ class GaussianMLP(Policy, torch.nn.Module):
 
         self.opt = torch.optim.Adam(self.parameters(), lr=lr)
         self.stochastic = True
+        self.action_max = action_max
+        self.action_min = action_min
 
     def _dist(self, observation) -> torch.distributions.Distribution:
         return torch.distributions.normal.Normal(self._mu(observation), self._sigma)
@@ -99,9 +116,11 @@ class GaussianMLP(Policy, torch.nn.Module):
     @torch.no_grad()
     def sample(self, observation):
         if self.stochastic:
-            return self._dist(observation).sample()
+            return torch.clamp(
+                self._dist(observation).sample(), self.action_min, self.action_max
+            )
         else:
-            return self._mu(observation)
+            return torch.clamp(self._mu(observation), self.action_min, self.action_max)
 
     def fit(self, feat, actions, weights):
         loss = None
