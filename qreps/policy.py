@@ -3,6 +3,7 @@ from typing import Union
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 
 class Policy(ABC):
@@ -14,7 +15,7 @@ class Policy(ABC):
     @abstractmethod
     def fit(
         self, feat: torch.Tensor, actions: torch.Tensor, weights: torch.Tensor
-    ) -> torch.FloatTensor:
+    ) -> dict:
         """Fit the policy to the provided samples"""
         pass
 
@@ -23,6 +24,8 @@ class Policy(ABC):
 
 
 class DiscreteStochasticPolicy(Policy):
+    """Discrete Policy which assigns every action in every state a probability."""
+
     def __init__(self, n_states: int, n_actions: int):
         self._policy = torch.ones((n_states, n_actions))
         self._policy /= torch.sum(self._policy, 1, keepdim=True)
@@ -33,19 +36,28 @@ class DiscreteStochasticPolicy(Policy):
         if self._eval:
             return int(torch.argmax(self._policy[observation]).item())
 
-        m = torch.distributions.Categorical(self._policy[observation])
+        m = self._dist(observation)
         return int(m.sample())
 
-    def fit(self, feats, actions, weights):
-        states = feats
+    def _dist(self, observation):
+        return torch.distributions.Categorical(self._policy[observation])
 
-        for s, a, w in zip(states.long().numpy(), actions.long().numpy(), weights):
+    def fit(self, feats, actions, weights):
+        log_like_before = self._dist(feats).log_prob(actions)
+
+        for s, a, w in zip(feats.long().numpy(), actions.long().numpy(), weights):
             self._policy[s, a] = self._policy[s, a] * w
 
-        self._policy = torch.softmax(self._policy, 1)
+        self._policy = self._policy / torch.sum(self._policy, dim=1, keepdim=True)
 
+        log_like_after = self._dist(feats).log_prob(actions)
         # FIXME: Return real loss
-        return 0
+        return {
+            "policy_loss": 0,
+            "kl_loss": F.kl_div(
+                log_like_before, log_like_after, log_target=True, reduction="batchmean"
+            ),
+        }
 
     def set_eval_mode(self, enabled: bool):
         self._eval = enabled
@@ -73,14 +85,23 @@ class CategoricalMLP(Policy, torch.nn.Module):
             return torch.argmax(self.layer(observation))
 
     def fit(self, feat, actions, weights):
-
         loss = None
+        loglike_before = self._dist(feat).log_prob(actions)
+
         for epoch in range(self.minimizing_epochs):
             self.opt.zero_grad()
             loss = self.log_likelihood(actions, feat, weights)
             loss.backward()
             self.opt.step()
-        return loss
+
+        loglike_after = self._dist(feat).log_prob(actions)
+
+        return {
+            "policy_loss": loss,
+            "kl_loss": F.kl_div(
+                loglike_before, loglike_after, log_target=True, reduction="batchmean"
+            ),
+        }
 
     def log_likelihood(self, taken_actions, feat, weights) -> torch.FloatTensor:
         log_lik = self._dist(feat).log_prob(taken_actions)
@@ -97,13 +118,14 @@ class GaussianMLP(Policy, torch.nn.Module):
         act_shape,
         action_max,
         action_min,
+        sigma=1.0,
         minimizing_epochs=300,
         lr=1e-2,
     ):
         super(GaussianMLP, self).__init__()
         self.minimizing_epochs = minimizing_epochs
         self._mu = torch.nn.Linear(obs_shape, act_shape, bias=False)
-        self._sigma = torch.nn.Parameter(torch.ones(act_shape))
+        self._sigma = sigma
 
         self.opt = torch.optim.Adam(self.parameters(), lr=lr)
         self.stochastic = True
@@ -123,18 +145,25 @@ class GaussianMLP(Policy, torch.nn.Module):
             return torch.clamp(self._mu(observation), self.action_min, self.action_max)
 
     def fit(self, feat, actions, weights):
+        loglike_before = self.log_likelihood(feat, actions)
         loss = None
         self._mu.reset_parameters()
         for epoch in range(self.minimizing_epochs):
             self.opt.zero_grad()
-            loss = self.log_likelihood(actions, feat, weights)
+            loss = -torch.mean(weights * self.log_likelihood(feat, actions))
             loss.backward()
             self.opt.step()
-        return loss
 
-    def log_likelihood(self, taken_actions, feat, weights) -> torch.FloatTensor:
-        log_lik = self._dist(feat).log_prob(taken_actions)
-        return -torch.mean(weights * log_lik)
+        loglike_after = self.log_likelihood(feat, actions)
+        return {
+            "policy_loss": loss,
+            "kl_loss": F.kl_div(
+                loglike_before, loglike_after, log_target=True, reduction="batchmean"
+            ),
+        }
+
+    def log_likelihood(self, feat, taken_actions) -> torch.FloatTensor:
+        return self._dist(feat).log_prob(taken_actions)
 
     def set_eval_mode(self, enabled):
         self.stochastic = not enabled

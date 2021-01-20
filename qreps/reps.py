@@ -10,8 +10,8 @@ from bsuite.baselines.utils import sequence
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 
+from .advantages import center_advantages
 from .buffer import Buffer
-from .feature_functions import bellman_error_batched
 from .policy import Policy
 from .reps_dual import reps_dual
 from .util import to_torch
@@ -33,6 +33,8 @@ class REPS(base.Agent):
         epsilon=1e-5,
         dual_optimizer_algorithm=nlopt.LD_SLSQP,
         writer: SummaryWriter = None,
+        center_advantages=True,
+        exp_limit=700,
     ):
         logger.info(f"Observations: {feat_shape}")
         logger.info(
@@ -45,6 +47,8 @@ class REPS(base.Agent):
         self.pol_feature_fn = pol_feature_fn
         self.theta = torch.rand(feat_shape)
         self.dual_optimizer_algorithm = dual_optimizer_algorithm
+        self.center_advantages = center_advantages
+        self.exp_limit = exp_limit
         self.policy = policy
         self.stochastic = True
         self.writer = writer
@@ -105,6 +109,14 @@ class REPS(base.Agent):
 
         return optimizer.last_optimum_value()
 
+    def calc_weights(self, features, rewards):
+        advantage = rewards - self.theta.matmul(features.T)
+        if self.center_advantages:
+            advantage = center_advantages(advantage)
+        return torch.exp(
+            torch.clamp(advantage / self.eta, -self.exp_limit, self.exp_limit)
+        )
+
     def update_policy(self, trajectory: sequence.Trajectory):
         observations, actions, rewards, discounts = trajectory
         features = self.feature_fn(observations[:-1])
@@ -116,22 +128,18 @@ class REPS(base.Agent):
         dual_loss = self.optimize_dual(features, features_next, discounted_rewards)
 
         # Calculate weights
-        weights = torch.exp(
-            bellman_error_batched(self.theta, features, features_next, rewards)
-            / self.eta
-        )
-        weights = torch.clamp(weights, 1e-75, np.inf)
-        weights = weights / torch.mean(weights, 0)
+        weights = self.calc_weights(features, rewards)
 
         pol_features = self.pol_feature_fn(observations[:-1])
         policy_loss = self.policy.fit(pol_features, actions, weights)
 
         logger.info(
-            f"Mean reward: {torch.mean(rewards):.2f}, Policy Loss: {policy_loss:.5f}, Dual Loss: {dual_loss:.2f}"
+            f"Mean reward: {torch.mean(rewards):.2f}, Dual Loss: {dual_loss:.2f}"
         )
         if self.writer is not None:
+            for key, value in policy_loss.items():
+                self.writer.add_scalar("train/" + key, value, self.iter)
             self.writer.add_scalar("train/mean_reward", torch.mean(rewards), self.iter)
-            self.writer.add_scalar("train/policy_loss", policy_loss, self.iter)
             self.writer.add_scalar("train/dual_loss", dual_loss, self.iter)
             self.writer.add_histogram("train/actions", actions, self.iter)
 

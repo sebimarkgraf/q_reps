@@ -17,7 +17,7 @@ FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 env: Environment = balance(
-    time_limit=3.0, environment_kwargs={"flat_observation": True}
+    time_limit=10.0, environment_kwargs={"flat_observation": True}
 )
 # env: Environment = suite.load(domain_name="cartpole", task_name="balance", visualize_reward=True, environment_kwargs={'flat_observation': True, 'time_limit': 5.0})
 print(env.observation_spec())
@@ -31,6 +31,7 @@ policy = GaussianMLP(
     75,
     1,
     minimizing_epochs=300,
+    sigma=0.2,
     action_min=env.action_spec().minimum[0],
     action_max=env.action_spec().maximum[0],
 )
@@ -67,7 +68,7 @@ for _ in range(10):
         timestep = new_timestep
 
 
-# policy.set_eval_mode(True)
+policy.set_eval_mode(True)
 
 
 def eval_func(timestep):
