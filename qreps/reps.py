@@ -34,7 +34,8 @@ class REPS(base.Agent):
         dual_optimizer_algorithm=nlopt.LD_SLSQP,
         writer: SummaryWriter = None,
         center_advantages=True,
-        exp_limit=700,
+        exp_limit=200.0,
+        l2_reg_dual=0,
     ):
         logger.info(f"Observations: {feat_shape}")
         logger.info(
@@ -49,6 +50,7 @@ class REPS(base.Agent):
         self.dual_optimizer_algorithm = dual_optimizer_algorithm
         self.center_advantages = center_advantages
         self.exp_limit = exp_limit
+        self.l2_reg_dual = l2_reg_dual
         self.policy = policy
         self.stochastic = True
         self.writer = writer
@@ -71,8 +73,14 @@ class REPS(base.Agent):
             theta = torch.tensor(
                 x[1:], dtype=torch.get_default_dtype(), requires_grad=True
             )
-            dual_val, d_eta, d_theta = reps_dual(
-                eta, theta, features, features_next, rewards, self.epsilon
+            dual_val = reps_dual(
+                eta,
+                theta,
+                features,
+                features_next,
+                rewards,
+                self.epsilon,
+                l2_reg_dual=self.l2_reg_dual,
             )
             dual_val.backward()
 

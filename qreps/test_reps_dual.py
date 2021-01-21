@@ -11,7 +11,7 @@ def test_reps_dual_value():
     rewards = torch.tensor([0.0, 2.0, 3.0])
     epsilon = torch.tensor(1e-2, dtype=torch.get_default_dtype())
 
-    dual_f, _, _ = reps_dual(eta, theta, features, features_next, rewards, epsilon)
+    dual_f = reps_dual(eta, theta, features, features_next, rewards, epsilon)
 
     # Manually with bellman_error = [3, 5, 6]
     result = torch.tensor(5.5202)
