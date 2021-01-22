@@ -3,13 +3,20 @@ from typing import Union
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 
 class Policy(ABC):
+    """Policy base class providing necessary interface for all derived policies.
+    A policy provides two main mechanisms:
+    * Sampling an action giving one observation necessary for running the policy
+    * Updating the policy given a trajectory of transitions and weights for the transitions
+    """
+
     @abstractmethod
     def sample(self, observation: torch.Tensor) -> Union[int, np.array]:
-        """Sample the policy"""
+        """Sample the policy to obtain an action to perform"""
         pass
 
     @abstractmethod
@@ -20,6 +27,7 @@ class Policy(ABC):
         pass
 
     def set_eval_mode(self, enabled: bool):
+        """Sets the policy to eval mode to enable exploitation without doing any more exploration"""
         pass
 
 
@@ -32,12 +40,14 @@ class DiscreteStochasticPolicy(Policy):
         self._eval = False
 
     def sample(self, observation):
-        """Expect observation to just be the state"""
         if self._eval:
             return int(torch.argmax(self._policy[observation]).item())
 
         m = self._dist(observation)
-        return int(m.sample())
+        return m.sample().item()
+
+    def forward(self, observation):
+        return self._policy[observation]
 
     def _dist(self, observation):
         return torch.distributions.Categorical(self._policy[observation])
@@ -45,11 +55,15 @@ class DiscreteStochasticPolicy(Policy):
     def fit(self, feats, actions, weights):
         log_like_before = self._dist(feats).log_prob(actions)
 
+        updated = torch.zeros_like(self._policy, dtype=torch.bool)
+
         for s, a, w in zip(feats.long().numpy(), actions.long().numpy(), weights):
+            if updated[s, a].item() is True:
+                continue
             self._policy[s, a] = self._policy[s, a] * w
+            updated[s, a] = True
 
-        self._policy = self._policy / torch.sum(self._policy, dim=1, keepdim=True)
-
+        self._policy = F.softmax(self._policy, dim=1)
         log_like_after = self._dist(feats).log_prob(actions)
         # FIXME: Return real loss
         return {
@@ -67,25 +81,30 @@ class CategoricalMLP(Policy, torch.nn.Module):
     def __init__(self, obs_shape, act_shape, minimizing_epochs=100, lr=1e-2):
         super(CategoricalMLP, self).__init__()
         self.minimizing_epochs = minimizing_epochs
-        self.layer = torch.nn.Linear(obs_shape, act_shape, bias=False)
+        self.stochastic = True
+        self.model = nn.Sequential(
+            nn.Linear(obs_shape, 128),
+            nn.ReLU(),
+            nn.Linear(128, act_shape),
+            nn.Softmax(dim=-1),
+        )
 
         self.opt = torch.optim.Adam(self.parameters(), lr=lr)
-        self.stochastic = True
+
+    def forward(self, x):
+        return self.model(x)
 
     def _dist(self, observation) -> torch.distributions.Distribution:
-        return torch.distributions.categorical.Categorical(
-            logits=self.layer(observation)
-        )
+        return torch.distributions.categorical.Categorical(self.forward(observation))
 
     @torch.no_grad()
     def sample(self, observation):
         if self.stochastic:
             return self._dist(observation).sample().item()
         else:
-            return torch.argmax(self.layer(observation))
+            return torch.argmax(self.forward(observation)).item()
 
     def fit(self, feat, actions, weights):
-        loss = None
         loglike_before = self._dist(feat).log_prob(actions)
 
         for epoch in range(self.minimizing_epochs):
@@ -112,28 +131,41 @@ class CategoricalMLP(Policy, torch.nn.Module):
 
 
 class GaussianMLP(Policy, torch.nn.Module):
+    """Gaussian Multi Layer Perceptron as a Policy.
+
+    Estimates mean of a gaussian distribution for every action and the corresponding deviation
+    depending on the given observations.
+
+    When set to eval mode returns the mean as action for every observation.
+    """
+
     def __init__(
         self,
         obs_shape,
         act_shape,
-        action_max,
         action_min,
+        action_max,
         sigma=1.0,
         minimizing_epochs=300,
         lr=1e-2,
     ):
         super(GaussianMLP, self).__init__()
         self.minimizing_epochs = minimizing_epochs
-        self._mu = torch.nn.Linear(obs_shape, act_shape, bias=False)
-        self._sigma = sigma
+        self.model = nn.Sequential(
+            nn.Linear(obs_shape, 128), nn.ReLU(), nn.Linear(128, act_shape)
+        )
+        self._sigma = nn.Parameter(torch.tensor(sigma))
 
         self.opt = torch.optim.Adam(self.parameters(), lr=lr)
         self.stochastic = True
         self.action_max = action_max
         self.action_min = action_min
 
+    def forward(self, x):
+        return self.model(x)
+
     def _dist(self, observation) -> torch.distributions.Distribution:
-        return torch.distributions.normal.Normal(self._mu(observation), self._sigma)
+        return torch.distributions.normal.Normal(self.forward(observation), self._sigma)
 
     @torch.no_grad()
     def sample(self, observation):
@@ -142,12 +174,13 @@ class GaussianMLP(Policy, torch.nn.Module):
                 self._dist(observation).sample(), self.action_min, self.action_max
             )
         else:
-            return torch.clamp(self._mu(observation), self.action_min, self.action_max)
+            return torch.clamp(
+                self.forward(observation), self.action_min, self.action_max
+            )
 
     def fit(self, feat, actions, weights):
         loglike_before = self.log_likelihood(feat, actions)
         loss = None
-        self._mu.reset_parameters()
         for epoch in range(self.minimizing_epochs):
             self.opt.zero_grad()
             loss = -torch.mean(weights * self.log_likelihood(feat, actions))

@@ -1,5 +1,6 @@
 import logging
 
+import nlopt
 from bsuite.baselines.experiment import run
 from dm_control import suite, viewer
 from dm_control.rl.control import Environment
@@ -31,14 +32,15 @@ agent = OrderedDictFlattenTransform(
         sequence_length=1000,
         val_feature_fn=feature_fn,
         pol_feature_fn=feature_fn,
-        epsilon=1e-5,
+        epsilon=0.1,
         policy=policy,
         writer=writer,
+        dual_optimizer_algorithm=nlopt.LD_SLSQP,
     ),
     ["orientation", "velocity"],
 )
 
-run(agent, env, num_episodes=10000)
+run(agent, env, num_episodes=30)
 
 policy.set_eval_mode(True)
 

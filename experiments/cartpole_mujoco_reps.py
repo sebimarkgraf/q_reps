@@ -1,5 +1,6 @@
 import logging
 
+import nlopt
 from dm_control import suite, viewer
 from dm_control.rl.control import Environment
 from dm_control.suite.cartpole import balance
@@ -9,6 +10,7 @@ from qreps.fourier_features import FourierFeatures
 from qreps.observation_transform import OrderedDictFlattenTransform
 from qreps.policy import GaussianMLP
 from qreps.reps import REPS
+from qreps.util import to_torch
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -26,9 +28,9 @@ print(env.discount_spec())
 
 writer = SummaryWriter(comment="_mujuco_reps")
 
-feature_fn = FourierFeatures(5, 75)
+feature_fn = to_torch
 policy = GaussianMLP(
-    75,
+    5,
     1,
     minimizing_epochs=300,
     sigma=0.2,
@@ -38,20 +40,21 @@ policy = GaussianMLP(
 
 agent = OrderedDictFlattenTransform(
     REPS(
-        feat_shape=(75,),
+        feat_shape=(5,),
         sequence_length=2000,
         val_feature_fn=feature_fn,
         pol_feature_fn=feature_fn,
-        epsilon=1e-5,
+        epsilon=0.5,
         policy=policy,
         writer=writer,
+        dual_optimizer_algorithm=nlopt.LD_SLSQP,
     ),
     ["observations"],
 )
 
 
 # Train loop
-for _ in range(10):
+for _ in range(30):
     # Run an episode.
     timestep = env.reset()
     while not timestep.last():

@@ -5,16 +5,17 @@ import dm_env
 import nlopt
 import numpy as np
 import torch
+import torch.nn.functional as F
 from bsuite.baselines import base
 from bsuite.baselines.utils import sequence
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 
-from .advantages import center_advantages
 from .buffer import Buffer
+from .feature_functions import bellman_error_batched
 from .policy import Policy
 from .reps_dual import reps_dual
-from .util import to_torch
+from .util import center_advantages, to_torch
 
 logger = logging.getLogger("reps")
 logger.addHandler(logging.NullHandler())
@@ -58,12 +59,9 @@ class REPS(base.Agent):
 
     def select_action(self, timestep: dm_env.TimeStep) -> Union[int, np.array]:
         """Selects actions using current policy in an on-policy setting"""
-        obs_feat = self.pol_feature_fn([timestep.observation])[0]
+        obs_feat = self.pol_feature_fn([timestep.observation])
         action = self.policy.sample(obs_feat)
         return action
-
-    def value_function(self, features: Tensor):
-        return self.theta.dot(features)
 
     def optimize_dual(self, features: Tensor, features_next: Tensor, rewards: Tensor):
         def eval_fn(x: np.array, grad: np.array):
@@ -117,37 +115,70 @@ class REPS(base.Agent):
 
         return optimizer.last_optimum_value()
 
-    def calc_weights(self, features, rewards):
-        advantage = rewards - self.theta.matmul(features.T)
+    def calc_weights(
+        self, features: Tensor, features_next: Tensor, rewards: Tensor
+    ) -> Tuple[Tensor, Tensor]:
+        """
+        Calculate the weights from the advantage for updating the policy
+
+        @param features: batched features for the states [N, feature_dim]
+        @param features_next: batches features for the following states (e.g. features[1:]) [N, feature_dim]
+        @param rewards: undiscounted rewards received in the states [N]
+        @return: Tuple of the weights, calculated advantages
+        """
+        advantage = bellman_error_batched(self.theta, features, features_next, rewards)
+
         if self.center_advantages:
             advantage = center_advantages(advantage)
-        return torch.exp(
-            torch.clamp(advantage / self.eta, -self.exp_limit, self.exp_limit)
+
+        weights = torch.exp(
+            torch.clamp(
+                advantage / self.eta - torch.max(advantage / self.eta),
+                -self.exp_limit,
+                self.exp_limit,
+            )
         )
+        return weights, advantage
 
     def update_policy(self, trajectory: sequence.Trajectory):
         observations, actions, rewards, discounts = trajectory
         features = self.feature_fn(observations[:-1])
         features_next = self.feature_fn(observations[1:])
         rewards = to_torch(rewards)
-        discounted_rewards = to_torch(rewards * discounts)
         actions = to_torch(actions)
 
-        dual_loss = self.optimize_dual(features, features_next, discounted_rewards)
+        dual_loss = self.optimize_dual(features, features_next, rewards)
 
         # Calculate weights
-        weights = self.calc_weights(features, rewards)
+        weights, advantage = self.calc_weights(features, features_next, rewards)
 
+        # The policy could have other features than the value function
+        # Need to calculate of all features besides the last -> Last observation has no action
         pol_features = self.pol_feature_fn(observations[:-1])
+        # Update the policy according to the calculated weights
+        # Returns a dict of all calculated measurements
         policy_loss = self.policy.fit(pol_features, actions, weights)
 
-        logger.info(
-            f"Mean reward: {torch.mean(rewards):.2f}, Dual Loss: {dual_loss:.2f}"
-        )
+        # FIXME: Remove this when no longer needed
+        # Allows to debug a discrete problem
+        # for s, a, adv, w, f in zip(
+        #     pol_features.long().numpy(),
+        #     actions.long().numpy(),
+        #     advantage,
+        #     weights,
+        #     features,
+        # ):
+        #     print(
+        #         f"State: {s}, Action: {a}, Advantage: {adv:2.2f}, Weight: {w:2.2f}, Values: {self.theta.dot(f)}"
+        #     )
+        # for s in range(len(self.theta)):
+        #    print(f"Value for State {s}: {self.theta.dot(self.feature_fn(s))}")
+
+        logger.info(f"Sum reward: {torch.sum(rewards):.2f}, Dual Loss: {dual_loss:.2f}")
         if self.writer is not None:
             for key, value in policy_loss.items():
                 self.writer.add_scalar("train/" + key, value, self.iter)
-            self.writer.add_scalar("train/mean_reward", torch.mean(rewards), self.iter)
+            self.writer.add_scalar("train/reward", torch.sum(rewards), self.iter)
             self.writer.add_scalar("train/dual_loss", dual_loss, self.iter)
             self.writer.add_histogram("train/actions", actions, self.iter)
 
@@ -159,23 +190,8 @@ class REPS(base.Agent):
     ):
         """Sampling: Obtain N samples (s_i, a_i, s_i', r_i)
 
-        Relevant from experiment
-        for _ in range(num_episodes):
-        # Run an episode.
-        timestep = environment.reset()
-        while not timestep.last():
-          # Generate an action from the agent's policy.
-          action = agent.select_action(timestep)
-
-          # Step the environment.
-          new_timestep = environment.step(action)
-
-          # Tell the agent about what just happened.
-          agent.update(timestep, action, new_timestep)
-
-          # Book-keeping.
-          timestep = new_timestep
-
+        Currently done using the Agent interface of DM.
+        TODO: Should be moved to a Trainer class in the future.
         """
         self.buffer.append(timestep, action, new_timestep)
         if self.buffer.full() or new_timestep.last():
