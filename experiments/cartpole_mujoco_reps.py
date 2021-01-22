@@ -10,6 +10,7 @@ from qreps.fourier_features import FourierFeatures
 from qreps.observation_transform import OrderedDictFlattenTransform
 from qreps.policy import GaussianMLP
 from qreps.reps import REPS
+from qreps.trainer import Trainer
 from qreps.util import to_torch
 
 for handler in logging.root.handlers[:]:
@@ -52,24 +53,9 @@ agent = OrderedDictFlattenTransform(
     ["observations"],
 )
 
-
-# Train loop
-for _ in range(30):
-    # Run an episode.
-    timestep = env.reset()
-    while not timestep.last():
-        # Generate an action from the agent's policy.
-        action = agent.select_action(timestep)
-
-        # Step the environment.
-        new_timestep = env.step(action)
-
-        # Tell the agent about what just happened.
-        agent.update(timestep, action, new_timestep)
-
-        # Book-keeping.
-        timestep = new_timestep
-
+trainer = Trainer()
+trainer.setup(agent, env)
+trainer.train(30, 2000)
 
 policy.set_eval_mode(True)
 
