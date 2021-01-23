@@ -49,7 +49,7 @@ agent = REPS(
 trainer = Trainer()
 trainer.setup(agent, env)
 
-trainer.train(100, 100)
+trainer.train(300, 100)
 
 policy.set_eval_mode(True)
 
