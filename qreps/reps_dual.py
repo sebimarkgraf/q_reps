@@ -11,6 +11,7 @@ def reps_dual(
     features_next: Tensor,
     rewards: Tensor,
     epsilon: Tensor,
+    gamma: float,
     l2_reg_dual: float = 0.0,
 ):
     """
@@ -25,7 +26,9 @@ def reps_dual(
     @param l2_reg_dual: Parameter to regularize the size of eta
     @return: the calculated dual function value, supporting autograd of PyTorch
     """
-    bellmann_error = bellman_error_batched(theta, features, features_next, rewards)
+    bellmann_error = bellman_error_batched(
+        theta, features, features_next, rewards, gamma
+    )
 
     # LogMeanExp manually, due to PyTorch only supporting logsumexp
     max_bell = torch.max(bellmann_error / eta)

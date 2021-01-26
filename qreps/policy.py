@@ -31,13 +31,15 @@ class Policy(ABC):
         pass
 
 
-class DiscreteStochasticPolicy(Policy):
+class DiscreteStochasticPolicy(Policy, nn.Module):
     """Discrete Policy which assigns every action in every state a probability."""
 
     def __init__(self, n_states: int, n_actions: int):
-        self._policy = torch.ones((n_states, n_actions))
-        self._policy /= torch.sum(self._policy, 1, keepdim=True)
+        _policy = torch.ones((n_states, n_actions))
+        _policy /= torch.sum(self._policy, 1, keepdim=True)
+        self._policy = _policy
         self._eval = False
+        self.lr = 1.0
 
     def sample(self, observation):
         if self._eval:
@@ -58,8 +60,8 @@ class DiscreteStochasticPolicy(Policy):
         updated = torch.zeros_like(self._policy, dtype=torch.bool)
 
         for s, a, w in zip(feats.long().numpy(), actions.long().numpy(), weights):
-            if updated[s, a].item() is True:
-                continue
+            # if updated[s, a].item() is True:
+            #    continue
             self._policy[s, a] = self._policy[s, a] * w
             updated[s, a] = True
 
@@ -152,7 +154,11 @@ class GaussianMLP(Policy, torch.nn.Module):
         super(GaussianMLP, self).__init__()
         self.minimizing_epochs = minimizing_epochs
         self.model = nn.Sequential(
-            nn.Linear(obs_shape, 128), nn.ReLU(), nn.Linear(128, act_shape)
+            nn.Linear(obs_shape, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, act_shape),
         )
         self._sigma = nn.Parameter(torch.tensor(sigma))
 

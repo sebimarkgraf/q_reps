@@ -1,3 +1,4 @@
+import numpy as np
 from dm_env import Environment, truncation
 
 
@@ -31,6 +32,28 @@ class Trainer:
             # Book-keeping.
             timestep = new_timestep
             step += 1
+
+    def _validate_once(self, max_steps):
+        timestep = self.env.reset()
+        step = 0
+        rewards = []
+        while not timestep.last():
+            # Generate an action from the agent's policy.
+            action = self.algo.select_action(timestep)
+            # Step the environment.
+            new_timestep = self.env.step(action)
+            if step == max_steps:
+                new_timestep = truncation(new_timestep.reward, new_timestep.observation)
+
+            # Book-keeping.
+            timestep = new_timestep
+            step += 1
+            rewards.append(new_timestep.reward)
+
+        return np.sum(rewards)
+
+    def validate(self, num_validation, max_steps):
+        return [self._validate_once(max_steps) for _ in range(num_validation)]
 
     def train(self, num_episodes, max_steps):
         """Trains the set algorithm for num_episodes and limits the steps per episode on max_steps.

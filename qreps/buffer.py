@@ -1,7 +1,60 @@
+import collections
+import random
+
 import dm_env
 import numpy as np
+import torch
 from bsuite.baselines import base
 from bsuite.baselines.utils.sequence import Trajectory
+
+
+class ReplayBuffer(object):
+    """A simple Python replay buffer."""
+
+    def __init__(self, capacity, discount=1.0):
+        self._prev = None
+        self._action = None
+        self._latest = None
+        self.buffer = collections.deque(maxlen=capacity)
+        self.discount = discount
+
+    def push(self, env_output, action):
+        self._prev = self._latest
+        self._action = action
+        self._latest = env_output
+
+        if self._prev is not None:
+            self.buffer.append(
+                (
+                    self._prev.observation,
+                    self._action,
+                    self._latest.reward,
+                    self._latest.discount,
+                    self._latest.observation,
+                )
+            )
+
+        if self._latest.last:
+            self._latest = None
+
+    def sample(self, batch_size):
+        obs_tm1, a_tm1, r_t, discount_t, obs_t = zip(
+            *random.sample(self.buffer, batch_size)
+        )
+        return (
+            torch.tensor(obs_tm1),
+            torch.tensor(a_tm1),
+            torch.tensor(r_t),
+            torch.tensor(discount_t) * self.discount,
+            torch.tensor(obs_t),
+        )
+
+    def is_ready(self, batch_size):
+        return batch_size <= len(self.buffer)
+
+    def reset(self):
+        self.buffer.clear()
+        self._prev = None
 
 
 class Buffer:

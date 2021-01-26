@@ -11,7 +11,7 @@ from bsuite.baselines.utils import sequence
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 
-from .buffer import Buffer
+from .buffer import Buffer, ReplayBuffer
 from .feature_functions import bellman_error_batched
 from .policy import Policy
 from .reps_dual import reps_dual
@@ -27,7 +27,7 @@ class REPS(base.Agent):
     def __init__(
         self,
         feat_shape: Tuple,
-        sequence_length: int,
+        buffer_size: int,
         policy: Policy,
         val_feature_fn: Callable[[np.array], Tensor],
         pol_feature_fn: Callable[[np.array], Tensor],
@@ -37,6 +37,8 @@ class REPS(base.Agent):
         center_advantages=True,
         exp_limit=200.0,
         l2_reg_dual=0,
+        batch_size=1000,
+        gamma=0.99,
     ):
         logger.info(f"Observations: {feat_shape}")
         logger.info(
@@ -44,7 +46,7 @@ class REPS(base.Agent):
         )
         self.eta = torch.rand((1,))
         self.epsilon = torch.tensor(epsilon)
-        self.buffer = Buffer(sequence_length)
+        self.buffer = ReplayBuffer(buffer_size)
         self.feature_fn = val_feature_fn
         self.pol_feature_fn = pol_feature_fn
         self.theta = torch.rand(feat_shape)
@@ -56,6 +58,8 @@ class REPS(base.Agent):
         self.stochastic = True
         self.writer = writer
         self.iter = 0
+        self.batch_size = batch_size
+        self.gamma = gamma
 
     def select_action(self, timestep: dm_env.TimeStep) -> Union[int, np.array]:
         """Selects actions using current policy in an on-policy setting"""
@@ -79,6 +83,7 @@ class REPS(base.Agent):
                 rewards,
                 self.epsilon,
                 l2_reg_dual=self.l2_reg_dual,
+                gamma=self.gamma,
             )
             dual_val.backward()
 
@@ -93,7 +98,7 @@ class REPS(base.Agent):
         optimizer.set_lower_bounds([1e-5] + [-np.inf] * len(self.theta))
         optimizer.set_upper_bounds([1e8] + [np.inf] * len(self.theta))
         optimizer.set_min_objective(eval_fn)
-        optimizer.set_ftol_abs(1e-7)
+        optimizer.set_ftol_abs(1e-12)
         optimizer.set_maxeval(3000)
 
         x0 = [1] + [1] * self.theta.shape[0]
@@ -126,7 +131,9 @@ class REPS(base.Agent):
         @param rewards: undiscounted rewards received in the states [N]
         @return: Tuple of the weights, calculated advantages
         """
-        advantage = bellman_error_batched(self.theta, features, features_next, rewards)
+        advantage = bellman_error_batched(
+            self.theta, features, features_next, rewards, self.gamma
+        )
 
         if self.center_advantages:
             advantage = center_advantages(advantage)
@@ -140,10 +147,27 @@ class REPS(base.Agent):
         )
         return weights, advantage
 
-    def update_policy(self, trajectory: sequence.Trajectory):
-        observations, actions, rewards, discounts = trajectory
-        features = self.feature_fn(observations[:-1])
-        features_next = self.feature_fn(observations[1:])
+    def kl_weights(self, weights):
+        """
+        Calculates the Kullback-Leiber Divergence for the calculated weights
+        @param weights: the weights which are given to the policy update
+        @return: KL for the weights. Should always be smaller than the provided bound epsilon
+        """
+        weights = weights / torch.mean(weights, dim=0)
+        return torch.mean(weights * torch.log(weights))
+
+    def update_policy(self):
+
+        (
+            next_observations,
+            actions,
+            rewards,
+            discounts,
+            observations,
+        ) = self.buffer.sample(self.batch_size)
+
+        features = self.feature_fn(observations)
+        features_next = self.feature_fn(next_observations)
         rewards = to_torch(rewards)
         actions = to_torch(actions)
 
@@ -154,23 +178,11 @@ class REPS(base.Agent):
 
         # The policy could have other features than the value function
         # Need to calculate of all features besides the last -> Last observation has no action
-        pol_features = self.pol_feature_fn(observations[:-1])
+        pol_features = self.pol_feature_fn(observations)
         # Update the policy according to the calculated weights
         # Returns a dict of all calculated measurements
-        policy_loss = self.policy.fit(pol_features, actions, weights)
+        policy_loss = self.policy.fit(pol_features, actions, weights.detach())
 
-        # FIXME: Remove this when no longer needed
-        # Allows to debug a discrete problem
-        # for s, a, adv, w, f in zip(
-        #     pol_features.long().numpy(),
-        #     actions.long().numpy(),
-        #     advantage,
-        #     weights,
-        #     features,
-        # ):
-        #     print(
-        #         f"State: {s}, Action: {a}, Advantage: {adv:2.2f}, Weight: {w:2.2f}, Values: {self.theta.dot(f)}"
-        #     )
         # for s in range(len(self.theta)):
         #    print(f"Value for State {s}: {self.theta.dot(self.feature_fn(s))}")
 
@@ -181,6 +193,9 @@ class REPS(base.Agent):
             self.writer.add_scalar("train/reward", torch.sum(rewards), self.iter)
             self.writer.add_scalar("train/dual_loss", dual_loss, self.iter)
             self.writer.add_histogram("train/actions", actions, self.iter)
+            self.writer.add_scalar(
+                "train/kl_samples", self.kl_weights(weights), self.iter
+            )
 
     def update(
         self,
@@ -193,8 +208,8 @@ class REPS(base.Agent):
         Currently done using the Agent interface of DM.
         TODO: Should be moved to a Trainer class in the future.
         """
-        self.buffer.append(timestep, action, new_timestep)
-        if self.buffer.full() or new_timestep.last():
-            trajectory = self.buffer.drain()
-            self.update_policy(trajectory)
+        self.buffer.push(new_timestep, action)
+        if self.buffer.is_ready(self.batch_size):
+            self.update_policy()
             self.iter += 1
+            self.buffer.reset()
