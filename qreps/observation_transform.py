@@ -38,3 +38,6 @@ class OrderedDictFlattenTransform(base.Agent):
             self.obs_transform(new_timestep.observation),
         )
         self._agent.update(timestep_1, action, new_timestep_1)
+
+    def update_policy(self, iteration):
+        self._agent.update_policy(iteration)

@@ -55,11 +55,14 @@ class Trainer:
     def validate(self, num_validation, max_steps):
         return [self._validate_once(max_steps) for _ in range(num_validation)]
 
-    def train(self, num_episodes, max_steps):
+    def train(self, num_iterations, max_steps, number_rollouts=1):
         """Trains the set algorithm for num_episodes and limits the steps per episode on max_steps.
         Note that the episode is returned earlier if the environment switches to done"""
         if self.algo is None or self.env is None:
             raise RuntimeError("Setup algorithm and environment before calling train.")
 
-        for i in range(num_episodes):
-            self._obtain_episode(max_steps)
+        for iteration in range(num_iterations):
+            for rollout in range(number_rollouts):
+                self._obtain_episode(max_steps)
+
+            self.algo.update_policy(iteration)

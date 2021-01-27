@@ -18,35 +18,28 @@ class ReplayBuffer(object):
         self.buffer = collections.deque(maxlen=capacity)
         self.discount = discount
 
-    def push(self, env_output, action):
-        self._prev = self._latest
-        self._action = action
-        self._latest = env_output
+    def push(self, timestep: dm_env.TimeStep, action, new_timestep: dm_env.TimeStep):
 
-        if self._prev is not None:
-            self.buffer.append(
-                (
-                    self._prev.observation,
-                    self._action,
-                    self._latest.reward,
-                    self._latest.discount,
-                    self._latest.observation,
-                )
+        self.buffer.append(
+            (
+                new_timestep.observation,
+                action,
+                timestep.reward,
+                timestep.discount,
+                timestep.observation,
             )
-
-        if self._latest.last is True:
-            self._latest = None
+        )
 
     def sample(self, batch_size):
         obs_tm1, a_tm1, r_t, discount_t, obs_t = zip(
             *random.sample(self.buffer, batch_size)
         )
         return (
-            torch.tensor(obs_tm1),
-            torch.tensor(a_tm1),
-            torch.tensor(r_t),
-            torch.tensor(discount_t) * self.discount,
-            torch.tensor(obs_t),
+            torch.tensor(obs_tm1).float(),
+            torch.tensor(a_tm1).float(),
+            torch.tensor(r_t).float(),
+            torch.tensor(discount_t).float() * self.discount,
+            torch.tensor(obs_t).float(),
         )
 
     def is_ready(self, batch_size):
@@ -54,7 +47,6 @@ class ReplayBuffer(object):
 
     def reset(self):
         self.buffer.clear()
-        self._prev = None
 
     def full(self):
         return self.buffer.maxlen == len(self.buffer)

@@ -26,8 +26,6 @@ print(env.action_spec())
 print(env.discount_spec())
 writer = SummaryWriter(comment="_mujuco_reps")
 
-feature_fn = to_torch
-pol_feature_fn = to_torch
 policy = GaussianMLP(
     5,
     1,
@@ -40,9 +38,7 @@ agent = OrderedDictFlattenTransform(
     REPS(
         buffer_size=3000,
         batch_size=500,
-        val_feature_fn=feature_fn,
-        pol_feature_fn=pol_feature_fn,
-        epsilon=0.1,
+        epsilon=0.5,
         policy=policy,
         writer=writer,
         value_function=SimpleValueFunction(5),

@@ -12,6 +12,8 @@ from qreps.fourier_features import FourierFeatures
 from qreps.observation_transform import OrderedDictFlattenTransform
 from qreps.policy import CategoricalMLP, GaussianMLP
 from qreps.reps import REPS
+from qreps.trainer import Trainer
+from qreps.value_functions import SimpleValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -31,41 +33,25 @@ feature_fn = FourierFeatures(env.observation_spec().shape[0], NUM_FEATURES)
 policy = GaussianMLP(
     NUM_FEATURES,
     env.action_spec().shape[0],
-    minimizing_epochs=300,
     action_min=env.action_spec().minimum[0],
     action_max=env.action_spec().maximum[0],
+    feature_fn=feature_fn,
 )
 
 agent = REPS(
-    feat_shape=(75,),
-    sequence_length=1000,
-    val_feature_fn=feature_fn,
-    pol_feature_fn=feature_fn,
-    epsilon=0.1,
+    buffer_size=2000,
+    batch_size=100,
+    epsilon=1.0,
     policy=policy,
     writer=writer,
-    dual_optimizer_algorithm=nlopt.LD_SLSQP,
+    value_function=SimpleValueFunction(NUM_FEATURES, feature_fn=feature_fn),
 )
 
-
-run(agent, env, num_episodes=30)
+trainer = Trainer()
+trainer.setup(agent, env)
+trainer.train(100, 200, number_rollouts=10)
 
 policy.set_eval_mode(True)
 
-val_rewards = []
-for i in range(5):
-    timestep = env.reset()
-    val_reward = 0
-    while not timestep.last():
-        # Generate an action from the agent's policy.
-        action = agent.select_action(timestep)
-        # Step the environment.
-        new_timestep = env.step(action)
-
-        # Book-keeping.
-        timestep = new_timestep
-        val_reward += timestep.reward
-        gym_env.render()
-    val_rewards.append(val_reward)
-
-print(f"Val reward: {val_rewards}")
+val_rewards = trainer.validate(5, 2000)
+logging.info(f"Validation rewards: {val_rewards}")

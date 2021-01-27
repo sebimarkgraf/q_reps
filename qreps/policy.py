@@ -13,9 +13,10 @@ class Policy(ABC):
     * Updating the policy given a trajectory of transitions and weights for the transitions
     """
 
-    def __init__(self):
+    def __init__(self, feature_fn=nn.Identity()):
         super(Policy, self).__init__()
         self._stochastic = True
+        self.feature_fn = feature_fn
 
     @abstractmethod
     def sample(self, observation: torch.Tensor) -> Union[int, np.array]:
@@ -35,18 +36,26 @@ class Policy(ABC):
         """Sets the policy to eval mode to enable exploitation without doing any more exploration"""
         self._stochastic = enabled
 
+    def forward(self, x):
+        return self.feature_fn(x)
+
 
 class TorchStochasticPolicy(Policy, nn.Module):
-    def __init__(self, n_states: int, n_actions: int):
-        super(TorchStochasticPolicy, self).__init__()
+    def __init__(self, n_states: int, n_actions: int, *args, **kwargs):
+        super(TorchStochasticPolicy, self).__init__(*args, **kwargs)
 
         # Initialize with same prob for all actions in each state
         _policy = torch.ones((n_states, n_actions))
         _policy /= torch.sum(_policy, 1, keepdim=True)
         self._policy = nn.Parameter(_policy)
 
+    def forward(self, x):
+        return super(TorchStochasticPolicy, self).forward(x)
+
     def _dist(self, observation):
-        return torch.distributions.Categorical(logits=self._policy[observation])
+        return torch.distributions.Categorical(
+            logits=self._policy[self.forward(observation)]
+        )
 
     def log_likelihood(self, feat, taken_actions) -> torch.FloatTensor:
         return self._dist(feat).log_prob(taken_actions)
@@ -56,12 +65,12 @@ class TorchStochasticPolicy(Policy, nn.Module):
         if self._stochastic:
             return self._dist(observation).sample().item()
         else:
-            return torch.argmax(self._policy[observation]).item()
+            return torch.argmax(self._policy[self.forward(observation)]).item()
 
 
 class CategoricalMLP(Policy, torch.nn.Module):
-    def __init__(self, obs_shape, act_shape):
-        super(CategoricalMLP, self).__init__()
+    def __init__(self, obs_shape, act_shape, *args, **kwargs):
+        super(CategoricalMLP, self).__init__(*args, **kwargs)
         self.model = nn.Sequential(
             nn.Linear(obs_shape, 128),
             nn.ReLU(),
@@ -70,7 +79,7 @@ class CategoricalMLP(Policy, torch.nn.Module):
         )
 
     def forward(self, x):
-        return self.model(x)
+        return self.model(super(CategoricalMLP, self).forward(x))
 
     def _dist(self, observation) -> torch.distributions.Distribution:
         return torch.distributions.categorical.Categorical(self.forward(observation))
@@ -96,9 +105,9 @@ class GaussianMLP(Policy, torch.nn.Module):
     """
 
     def __init__(
-        self, obs_shape, act_shape, action_min, action_max, sigma=1.0,
+        self, obs_shape, act_shape, action_min, action_max, sigma=1.0, *args, **kwargs
     ):
-        super(GaussianMLP, self).__init__()
+        super(GaussianMLP, self).__init__(*args, **kwargs)
         self.model = nn.Sequential(
             nn.Linear(obs_shape, 128),
             nn.ReLU(),
@@ -111,7 +120,7 @@ class GaussianMLP(Policy, torch.nn.Module):
         self.action_min = action_min
 
     def forward(self, x):
-        return self.model(x)
+        return self.model(super(GaussianMLP, self).forward(x))
 
     @property
     def sigma(self):
