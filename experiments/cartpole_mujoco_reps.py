@@ -31,7 +31,6 @@ pol_feature_fn = to_torch
 policy = GaussianMLP(
     5,
     1,
-    minimizing_epochs=300,
     sigma=1.0,
     action_min=env.action_spec().minimum[0],
     action_max=env.action_spec().maximum[0],

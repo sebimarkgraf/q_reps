@@ -6,7 +6,7 @@ from bsuite.utils import gym_wrapper
 from gym.envs.toy_text import NChainEnv
 from torch.utils.tensorboard import SummaryWriter
 
-from qreps.policy import DiscreteStochasticPolicy, TorchStochasticPolicy
+from qreps.policy import TorchStochasticPolicy
 from qreps.reps import REPS
 from qreps.trainer import Trainer
 from qreps.value_functions import SimpleValueFunction
