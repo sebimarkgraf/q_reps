@@ -5,30 +5,27 @@ import dm_env
 import nlopt
 import numpy as np
 import torch
-import torch.nn.functional as F
+import torch.nn as nn
 from bsuite.baselines import base
-from bsuite.baselines.utils import sequence
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 
-from .buffer import Buffer, ReplayBuffer
-from .feature_functions import bellman_error_batched
+from .buffer import ReplayBuffer
 from .policy import Policy
-from .reps_dual import reps_dual
 from .util import center_advantages, to_torch
 
 logger = logging.getLogger("reps")
 logger.addHandler(logging.NullHandler())
 
 
-class REPS(base.Agent):
+class REPS(base.Agent, nn.Module):
     """Feed-forward actor-critic agent."""
 
     def __init__(
         self,
-        feat_shape: Tuple,
         buffer_size: int,
         policy: Policy,
+        value_function,
         val_feature_fn: Callable[[np.array], Tensor],
         pol_feature_fn: Callable[[np.array], Tensor],
         epsilon=1e-5,
@@ -36,30 +33,55 @@ class REPS(base.Agent):
         writer: SummaryWriter = None,
         center_advantages=True,
         exp_limit=200.0,
-        l2_reg_dual=0,
+        dual_opt_steps=500,
+        pol_opt_steps=300,
         batch_size=1000,
         gamma=0.99,
     ):
-        logger.info(f"Observations: {feat_shape}")
+        super().__init__()
         logger.info(
             f"Using Optimizer: {nlopt.algorithm_name(dual_optimizer_algorithm)}"
         )
-        self.eta = torch.rand((1,))
+        # we need to use eta by using the log to keep it positive
+        self.log_eta = nn.Parameter(torch.zeros(1,))
         self.epsilon = torch.tensor(epsilon)
         self.buffer = ReplayBuffer(buffer_size)
         self.feature_fn = val_feature_fn
         self.pol_feature_fn = pol_feature_fn
-        self.theta = torch.rand(feat_shape)
-        self.dual_optimizer_algorithm = dual_optimizer_algorithm
         self.center_advantages = center_advantages
         self.exp_limit = exp_limit
-        self.l2_reg_dual = l2_reg_dual
         self.policy = policy
         self.stochastic = True
         self.writer = writer
         self.iter = 0
         self.batch_size = batch_size
         self.gamma = gamma
+        self.value_function = value_function
+        self.optimizer = torch.optim.Adam(self.parameters())
+        self.dual_opt_steps = dual_opt_steps
+        self.pol_opt_steps = pol_opt_steps
+        self.clip_gradient_val = 100
+
+    def dual(
+        self, features: Tensor, features_next: Tensor, rewards: Tensor, _actions: Tensor
+    ):
+        """
+        Implements REPS loss
+
+        @param features: the batched features of the state
+        @param features_next: the batches features for the next state i.e. features[1:]
+        @param rewards: the batches rewards for the transitions
+        @param _actions: action for having the same signature in dual and nll_loss
+        @return: the calculated dual function value, supporting autograd of PyTorch
+        """
+        value = self.value_function(self.feature_fn(features))
+        bellman_error = self.bellman_error(features, features_next, rewards)
+        weights = bellman_error / self.eta()
+        normalizer = torch.logsumexp(weights, dim=0)
+        dual = self.eta() * (self.epsilon + normalizer) + (1.0 - self.gamma) * value
+        # + l2_reg_dual * (torch.square(self.eta) + torch.square(1 / self.eta))
+
+        return dual.mean(0)
 
     def select_action(self, timestep: dm_env.TimeStep) -> Union[int, np.array]:
         """Selects actions using current policy in an on-policy setting"""
@@ -67,62 +89,36 @@ class REPS(base.Agent):
         action = self.policy.sample(obs_feat)
         return action
 
-    def optimize_dual(self, features: Tensor, features_next: Tensor, rewards: Tensor):
-        def eval_fn(x: np.array, grad: np.array):
-            eta = torch.tensor(
-                x[0], dtype=torch.get_default_dtype(), requires_grad=True
-            )
-            theta = torch.tensor(
-                x[1:], dtype=torch.get_default_dtype(), requires_grad=True
-            )
-            dual_val = reps_dual(
-                eta,
-                theta,
-                features,
-                features_next,
+    def optimize_loss(self, loss_fn: Callable, opt_steps):
+        loss = 0
+        for _ in range(opt_steps):
+            (
+                next_observations,
+                actions,
                 rewards,
-                self.epsilon,
-                l2_reg_dual=self.l2_reg_dual,
-                gamma=self.gamma,
-            )
-            dual_val.backward()
+                discounts,
+                observations,
+            ) = self.buffer.sample(self.batch_size)
+            self.optimizer.zero_grad()
+            loss = loss_fn(observations, next_observations, rewards, actions)
+            loss.backward()
+            self.optimizer.step()
 
-            if grad.size > 0:
-                grad[0] = eta.grad.numpy()
-                grad[1:] = theta.grad.numpy()
+        return loss
 
-            return dual_val.item()
+    def bellman_error(self, features, features_next, rewards):
+        value = self.value_function(self.feature_fn(features))
+        value_next = self.value_function(self.feature_fn(features_next))
+        value_target = rewards + self.gamma * value_next
+        return value_target - value
 
-        # SLSQP seems to work but L-BFGS fails without useful errors
-        optimizer = nlopt.opt(self.dual_optimizer_algorithm, 1 + len(self.theta))
-        optimizer.set_lower_bounds([1e-5] + [-np.inf] * len(self.theta))
-        optimizer.set_upper_bounds([1e8] + [np.inf] * len(self.theta))
-        optimizer.set_min_objective(eval_fn)
-        optimizer.set_ftol_abs(1e-12)
-        optimizer.set_maxeval(3000)
-
-        x0 = [1] + [1] * self.theta.shape[0]
-
-        try:
-            params_best = optimizer.optimize(x0)
-        except:  # noqa:
-            params_best = x0
-            logger.warning("Stopped optimization due to error.")
-
-        logger.debug(f"New Params: {params_best}")
-        logger.debug(f"Optimized dual value: {optimizer.last_optimum_value()}")
-        if optimizer.last_optimize_result() == nlopt.MAXEVAL_REACHED:
-            logger.info("Stopped due to max eval iterations.")
-
-        # Update params from optimum
-        self.eta = to_torch(params_best[0])
-        self.theta = to_torch(params_best[1:])
-
-        return optimizer.last_optimum_value()
+    def eta(self):
+        """Eta as a function from the logarithm. Forces eta to be positive"""
+        return torch.exp(self.log_eta)
 
     def calc_weights(
         self, features: Tensor, features_next: Tensor, rewards: Tensor
-    ) -> Tuple[Tensor, Tensor]:
+    ) -> Tensor:
         """
         Calculate the weights from the advantage for updating the policy
 
@@ -131,21 +127,13 @@ class REPS(base.Agent):
         @param rewards: undiscounted rewards received in the states [N]
         @return: Tuple of the weights, calculated advantages
         """
-        advantage = bellman_error_batched(
-            self.theta, features, features_next, rewards, self.gamma
-        )
+        advantage = self.bellman_error(features, features_next, rewards)
 
         if self.center_advantages:
             advantage = center_advantages(advantage)
 
-        weights = torch.exp(
-            torch.clamp(
-                advantage / self.eta - torch.max(advantage / self.eta),
-                -self.exp_limit,
-                self.exp_limit,
-            )
-        )
-        return weights, advantage
+        weights = advantage / self.eta()
+        return weights
 
     def kl_weights(self, weights):
         """
@@ -166,36 +154,30 @@ class REPS(base.Agent):
             observations,
         ) = self.buffer.sample(self.batch_size)
 
-        features = self.feature_fn(observations)
-        features_next = self.feature_fn(next_observations)
         rewards = to_torch(rewards)
         actions = to_torch(actions)
 
-        dual_loss = self.optimize_dual(features, features_next, rewards)
+        dual_loss = self.optimize_loss(self.dual, self.dual_opt_steps)
+        pol_loss = self.optimize_loss(self.nll_loss, self.pol_opt_steps)
 
-        # Calculate weights
-        weights, advantage = self.calc_weights(features, features_next, rewards)
-
-        # The policy could have other features than the value function
-        # Need to calculate of all features besides the last -> Last observation has no action
-        pol_features = self.pol_feature_fn(observations)
-        # Update the policy according to the calculated weights
-        # Returns a dict of all calculated measurements
-        policy_loss = self.policy.fit(pol_features, actions, weights.detach())
-
-        # for s in range(len(self.theta)):
-        #    print(f"Value for State {s}: {self.theta.dot(self.feature_fn(s))}")
-
-        logger.info(f"Sum reward: {torch.sum(rewards):.2f}, Dual Loss: {dual_loss:.2f}")
+        logger.info(
+            f"Sum reward: {torch.sum(rewards):.2f}, Dual Loss: {dual_loss.item():.2f}"
+        )
         if self.writer is not None:
-            for key, value in policy_loss.items():
-                self.writer.add_scalar("train/" + key, value, self.iter)
+            self.writer.add_scalar("train/pol_loss", pol_loss, self.iter)
             self.writer.add_scalar("train/reward", torch.sum(rewards), self.iter)
             self.writer.add_scalar("train/dual_loss", dual_loss, self.iter)
             self.writer.add_histogram("train/actions", actions, self.iter)
-            self.writer.add_scalar(
-                "train/kl_samples", self.kl_weights(weights), self.iter
-            )
+            # self.writer.add_scalar(
+            #    "train/kl_samples", self.kl_weights(weights), self.iter
+            # )
+
+    def nll_loss(self, observations, next_observations, rewards, actions):
+        weights = self.calc_weights(observations, next_observations, rewards)
+        nll = weights.detach() * self.policy.log_likelihood(
+            self.pol_feature_fn(observations), actions
+        )
+        return -torch.mean(torch.clamp_max(nll, 1e-3))
 
     def update(
         self,
@@ -209,7 +191,7 @@ class REPS(base.Agent):
         TODO: Should be moved to a Trainer class in the future.
         """
         self.buffer.push(new_timestep, action)
-        if self.buffer.is_ready(self.batch_size):
+        if self.buffer.full():
             self.update_policy()
             self.iter += 1
             self.buffer.reset()

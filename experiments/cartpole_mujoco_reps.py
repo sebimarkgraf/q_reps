@@ -1,17 +1,16 @@
 import logging
 
-import nlopt
 from dm_control import viewer
 from dm_control.rl.control import Environment
 from dm_control.suite.cartpole import balance
 from torch.utils.tensorboard import SummaryWriter
 
-from qreps.fourier_features import FourierFeatures
 from qreps.observation_transform import OrderedDictFlattenTransform
 from qreps.policy import GaussianMLP
 from qreps.reps import REPS
 from qreps.trainer import Trainer
 from qreps.util import to_torch
+from qreps.value_functions import SimpleValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -27,7 +26,7 @@ print(env.action_spec())
 print(env.discount_spec())
 writer = SummaryWriter(comment="_mujuco_reps")
 
-feature_fn = FourierFeatures(5, 75)
+feature_fn = to_torch
 pol_feature_fn = to_torch
 policy = GaussianMLP(
     5,
@@ -40,22 +39,21 @@ policy = GaussianMLP(
 
 agent = OrderedDictFlattenTransform(
     REPS(
-        feat_shape=(75,),
-        buffer_size=10000,
-        batch_size=3000,
+        buffer_size=3000,
+        batch_size=500,
         val_feature_fn=feature_fn,
         pol_feature_fn=pol_feature_fn,
         epsilon=0.1,
         policy=policy,
         writer=writer,
-        dual_optimizer_algorithm=nlopt.LD_SLSQP,
+        value_function=SimpleValueFunction(5),
     ),
     ["observations"],
 )
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(50, 10000)
+trainer.train(200, 2000)
 
 policy.set_eval_mode(True)
 

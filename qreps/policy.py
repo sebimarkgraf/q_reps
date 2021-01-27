@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.optim import Adam
 
 
 class Policy(ABC):
@@ -19,7 +20,6 @@ class Policy(ABC):
         """Sample the policy to obtain an action to perform"""
         pass
 
-    @abstractmethod
     def fit(
         self, feat: torch.Tensor, actions: torch.Tensor, weights: torch.Tensor
     ) -> dict:
@@ -31,12 +31,40 @@ class Policy(ABC):
         pass
 
 
-class DiscreteStochasticPolicy(Policy, nn.Module):
+class TorchStochasticPolicy(Policy, nn.Module):
+    def __init__(self, n_states: int, n_actions: int, minimizing_epochs=300):
+        super().__init__()
+        _policy = torch.ones((n_states, n_actions))
+        _policy /= torch.sum(_policy, 1, keepdim=True)
+        self._policy = nn.Parameter(_policy)
+        self.stochastic = True
+        self.lr = 1e-3
+        self.opt = Adam(self.parameters(), lr=self.lr)
+        self.minimizing_epochs = minimizing_epochs
+
+    def _dist(self, observation):
+        return torch.distributions.Categorical(logits=self._policy[observation])
+
+    def log_likelihood(self, feat, taken_actions) -> torch.FloatTensor:
+        return self._dist(feat).log_prob(taken_actions)
+
+    def set_eval_mode(self, enabled):
+        self.stochastic = not enabled
+
+    @torch.no_grad()
+    def sample(self, observation):
+        if self.stochastic:
+            return self._dist(observation).sample().item()
+        else:
+            return torch.argmax(self._policy[observation]).item()
+
+
+class DiscreteStochasticPolicy(Policy):
     """Discrete Policy which assigns every action in every state a probability."""
 
     def __init__(self, n_states: int, n_actions: int):
         _policy = torch.ones((n_states, n_actions))
-        _policy /= torch.sum(self._policy, 1, keepdim=True)
+        _policy /= torch.sum(_policy, 1, keepdim=True)
         self._policy = _policy
         self._eval = False
         self.lr = 1.0
@@ -57,13 +85,8 @@ class DiscreteStochasticPolicy(Policy, nn.Module):
     def fit(self, feats, actions, weights):
         log_like_before = self._dist(feats).log_prob(actions)
 
-        updated = torch.zeros_like(self._policy, dtype=torch.bool)
-
         for s, a, w in zip(feats.long().numpy(), actions.long().numpy(), weights):
-            # if updated[s, a].item() is True:
-            #    continue
             self._policy[s, a] = self._policy[s, a] * w
-            updated[s, a] = True
 
         self._policy = F.softmax(self._policy, dim=1)
         log_like_after = self._dist(feats).log_prob(actions)

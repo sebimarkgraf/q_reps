@@ -34,7 +34,7 @@ class ReplayBuffer(object):
                 )
             )
 
-        if self._latest.last:
+        if self._latest.last is True:
             self._latest = None
 
     def sample(self, batch_size):
@@ -55,6 +55,9 @@ class ReplayBuffer(object):
     def reset(self):
         self.buffer.clear()
         self._prev = None
+
+    def full(self):
+        return self.buffer.maxlen == len(self.buffer)
 
 
 class Buffer:
