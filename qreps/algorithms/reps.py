@@ -9,9 +9,9 @@ from bsuite.baselines import base
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 
-from .buffer import ReplayBuffer
-from .policy import Policy
-from .util import center_advantages, to_torch
+from qreps.memory.replay_buffer import ReplayBuffer
+from qreps.policies.policy import Policy
+from qreps.util import center_advantages, to_torch
 
 logger = logging.getLogger("reps")
 logger.addHandler(logging.NullHandler())

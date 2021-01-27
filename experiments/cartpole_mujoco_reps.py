@@ -5,12 +5,11 @@ from dm_control.rl.control import Environment
 from dm_control.suite.cartpole import balance
 from torch.utils.tensorboard import SummaryWriter
 
+from qreps.algorithms.reps import REPS
 from qreps.observation_transform import OrderedDictFlattenTransform
-from qreps.policy import GaussianMLP
-from qreps.reps import REPS
+from qreps.policies.gaussian_mlp import GaussianMLPPolicy
 from qreps.trainer import Trainer
-from qreps.util import to_torch
-from qreps.value_functions import SimpleValueFunction
+from qreps.valuefunctions.value_functions import NNValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -26,7 +25,7 @@ print(env.action_spec())
 print(env.discount_spec())
 writer = SummaryWriter(comment="_mujuco_reps")
 
-policy = GaussianMLP(
+policy = GaussianMLPPolicy(
     5,
     1,
     sigma=1.0,
@@ -38,10 +37,12 @@ agent = OrderedDictFlattenTransform(
     REPS(
         buffer_size=3000,
         batch_size=500,
-        epsilon=0.5,
+        epsilon=1.0,
         policy=policy,
         writer=writer,
-        value_function=SimpleValueFunction(5),
+        value_function=NNValueFunction(5),
+        pol_opt_steps=300,
+        center_advantages=False,
     ),
     ["observations"],
 )

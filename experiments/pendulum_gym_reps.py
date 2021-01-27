@@ -1,19 +1,15 @@
 import logging
 
 import gym
-import nlopt
-from bsuite.baselines.experiment import run
 from bsuite.utils import gym_wrapper
-from dm_control import suite, viewer
 from dm_control.rl.control import Environment
 from torch.utils.tensorboard import SummaryWriter
 
+from qreps.algorithms.reps import REPS
 from qreps.fourier_features import FourierFeatures
-from qreps.observation_transform import OrderedDictFlattenTransform
-from qreps.policy import CategoricalMLP, GaussianMLP
-from qreps.reps import REPS
+from qreps.policies.policy import GaussianMLP
 from qreps.trainer import Trainer
-from qreps.value_functions import SimpleValueFunction
+from qreps.valuefunctions.value_functions import SimpleValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)

@@ -6,10 +6,10 @@ from bsuite.utils import gym_wrapper
 from gym.envs.toy_text import NChainEnv
 from torch.utils.tensorboard import SummaryWriter
 
-from qreps.policy import TorchStochasticPolicy
-from qreps.reps import REPS
+from qreps.algorithms.reps import REPS
+from qreps.policies.stochastic_table import StochasticTablePolicy
 from qreps.trainer import Trainer
-from qreps.value_functions import SimpleValueFunction
+from qreps.valuefunctions.value_functions import SimpleValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -33,7 +33,7 @@ def pol_feature_fn(x):
     return torch.tensor(x).long()
 
 
-policy = TorchStochasticPolicy(
+policy = StochasticTablePolicy(
     obs_num, env.action_spec().num_values, feature_fn=pol_feature_fn
 )
 
@@ -41,7 +41,7 @@ agent = REPS(
     buffer_size=5000,
     batch_size=50,
     writer=writer,
-    epsilon=1e-4,
+    epsilon=0.5,
     policy=policy,
     center_advantages=False,
     value_function=SimpleValueFunction(obs_num, feature_fn),
@@ -49,7 +49,7 @@ agent = REPS(
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(num_iterations=5, max_steps=30, number_rollouts=5)
+trainer.train(num_iterations=5, max_steps=100, number_rollouts=5)
 policy.set_eval_mode(True)
 
 val_reward = trainer.validate(5, 100)

@@ -4,10 +4,10 @@ import gym
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
 
-from qreps.policy import CategoricalMLP
-from qreps.reps import REPS
+from qreps.algorithms.reps import REPS
+from qreps.policies.policy import CategoricalMLP
 from qreps.trainer import Trainer
-from qreps.value_functions import SimpleValueFunction
+from qreps.valuefunctions.value_functions import SimpleValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)

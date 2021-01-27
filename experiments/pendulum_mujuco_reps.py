@@ -6,10 +6,10 @@ from dm_control import suite, viewer
 from dm_control.rl.control import Environment
 from torch.utils.tensorboard import SummaryWriter
 
+from qreps.algorithms.reps import REPS
 from qreps.fourier_features import FourierFeatures
 from qreps.observation_transform import OrderedDictFlattenTransform
-from qreps.policy import GaussianMLP
-from qreps.reps import REPS
+from qreps.policies.policy import GaussianMLP
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
