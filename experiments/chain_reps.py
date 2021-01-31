@@ -55,6 +55,7 @@ agent = REPS(
     center_advantages=False,
     value_function=value_function,
     optimize_policy=True,
+    gamma=0.9,
 )
 
 trainer = Trainer()
