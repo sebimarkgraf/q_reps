@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 
 
-class Policy(ABC):
+class StochasticPolicy(ABC):
     """Policy base class providing necessary interface for all derived policies.
     A policy provides two main mechanisms:
     * Sampling an action giving one observation necessary for running the policy
@@ -14,7 +14,7 @@ class Policy(ABC):
     """
 
     def __init__(self, feature_fn=nn.Identity()):
-        super(Policy, self).__init__()
+        super(StochasticPolicy, self).__init__()
         self._stochastic = True
         self.feature_fn = feature_fn
 
@@ -38,3 +38,8 @@ class Policy(ABC):
 
     def forward(self, x):
         return self.feature_fn(x)
+
+    @abstractmethod
+    def distribution(self, x):
+        """Return the distribution to a specific observation"""
+        pass

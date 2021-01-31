@@ -7,7 +7,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.reps import REPS
 from qreps.observation_transform import OrderedDictFlattenTransform
-from qreps.policies.gaussian_mlp import GaussianMLPPolicy
+from qreps.policies.gaussian_mlp import GaussianMLPStochasticPolicy
 from qreps.trainer import Trainer
 from qreps.valuefunctions.value_functions import NNValueFunction
 
@@ -25,7 +25,7 @@ print(env.action_spec())
 print(env.discount_spec())
 writer = SummaryWriter(comment="_mujuco_reps")
 
-policy = GaussianMLPPolicy(
+policy = GaussianMLPStochasticPolicy(
     5,
     1,
     sigma=1.0,

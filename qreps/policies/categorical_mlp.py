@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 
-from qreps.policies.policy import Policy
+from qreps.policies.stochasticpolicy import StochasticPolicy
 
 
-class CategoricalMLP(Policy, nn.Module):
+class CategoricalMLP(StochasticPolicy, nn.Module):
     def __init__(self, obs_shape, act_shape, *args, **kwargs):
         super(CategoricalMLP, self).__init__(*args, **kwargs)
         self.model = nn.Sequential(
@@ -17,15 +17,15 @@ class CategoricalMLP(Policy, nn.Module):
     def forward(self, x):
         return self.model(super(CategoricalMLP, self).forward(x))
 
-    def _dist(self, observation) -> torch.distributions.Distribution:
+    def distribution(self, observation) -> torch.distributions.Distribution:
         return torch.distributions.categorical.Categorical(self.forward(observation))
 
     @torch.no_grad()
     def sample(self, observation):
         if self._stochastic:
-            return self._dist(observation).sample().item()
+            return self.distribution(observation).sample().item()
         else:
             return torch.argmax(self.forward(observation)).item()
 
     def log_likelihood(self, features, actions):
-        return self._dist(features).log_prob(actions)
+        return self.distribution(features).log_prob(actions)

@@ -39,6 +39,16 @@ class ReplayBuffer(object):
             torch.tensor(obs_t).float(),
         )
 
+    def get_all(self):
+        obs_tm1, a_tm1, r_t, discount_t, obs_t = zip(*self.buffer)
+        return (
+            torch.tensor(obs_tm1).float(),
+            torch.tensor(a_tm1).float(),
+            torch.tensor(r_t).float(),
+            torch.tensor(discount_t).float() * self.discount,
+            torch.tensor(obs_t).float(),
+        )
+
     def is_ready(self, batch_size):
         return batch_size <= len(self.buffer)
 
