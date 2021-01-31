@@ -9,7 +9,8 @@ from torch.utils.tensorboard import SummaryWriter
 from qreps.algorithms.reps import REPS
 from qreps.fourier_features import FourierFeatures
 from qreps.observation_transform import OrderedDictFlattenTransform
-from qreps.policies.policy import GaussianMLP
+from qreps.policies.gaussian_mlp import GaussianMLPStochasticPolicy
+from qreps.valuefunctions.value_functions import NNValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -24,18 +25,15 @@ print(env.action_spec())
 writer = SummaryWriter(comment="_pendulum_reps")
 
 feature_fn = FourierFeatures(3, 75)
-policy = GaussianMLP(75, 1, minimizing_epochs=300, action_min=-1, action_max=1)
+
+policy = GaussianMLPStochasticPolicy(75, 1, feature_fn=feature_fn)
 
 agent = OrderedDictFlattenTransform(
     REPS(
-        feat_shape=(75,),
-        sequence_length=1000,
-        val_feature_fn=feature_fn,
-        pol_feature_fn=feature_fn,
-        epsilon=0.1,
+        buffer_size=10000,
+        value_function=NNValueFunction(3),
         policy=policy,
         writer=writer,
-        dual_optimizer_algorithm=nlopt.LD_SLSQP,
     ),
     ["orientation", "velocity"],
 )

@@ -1,3 +1,5 @@
+from typing import Callable
+
 import torch
 
 
@@ -21,7 +23,7 @@ def integrate_discrete(func, distribution: torch.distributions.Distribution):
 
 
 def integrate_continuous(
-    func, distribution: torch.distributions.Distribution, samples=15
+    func: Callable, distribution: torch.distributions.Distribution, samples=15
 ):
     value = torch.zeros(distribution.batch_shape)
     for _ in range(samples):
@@ -30,13 +32,19 @@ def integrate_continuous(
         else:
             action = distribution.sample()
         value += func(action)
-    return func.mean(0)
+    return value.mean(0)
 
 
 def integrate(
-    func, distribution: torch.distributions.Distribution, continuous_samples=15
+    func: Callable,
+    distribution: torch.distributions.Distribution,
+    continuous_samples=15,
 ):
     if distribution.has_enumerate_support:
         return integrate_discrete(func, distribution)
     else:
         return integrate_continuous(func, distribution, continuous_samples)
+
+
+def episode_normalize_rewards(rewards):
+    return (rewards - rewards.mean(0)) / rewards.std()

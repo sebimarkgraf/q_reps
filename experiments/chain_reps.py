@@ -36,13 +36,13 @@ def pol_feature_fn(x):
 
 value_function = SimpleValueFunction(obs_num, feature_fn)
 
-transition_model = torch.tensor([[1, 0], [2, 0], [3, 0], [4, 0], [4, 0]])
-
+# transition_model = torch.tensor([[1, 0], [2, 0], [3, 0], [4, 0], [4, 0]])
+#
 # policy = ValueFunctionPolicy(
 #    n_actions=act_num,
 #    value_function=value_function,
 #    transition_model=transition_model,
-#    eps=0.5
+#    eps=0.02
 # )
 
 policy = StochasticTablePolicy(obs_num, act_num)
@@ -52,9 +52,7 @@ agent = REPS(
     batch_size=50,
     writer=writer,
     policy=policy,
-    center_advantages=False,
     value_function=value_function,
-    optimize_policy=True,
     gamma=0.9,
 )
 

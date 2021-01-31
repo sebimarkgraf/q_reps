@@ -35,13 +35,12 @@ policy = GaussianMLPStochasticPolicy(
 
 agent = OrderedDictFlattenTransform(
     REPS(
-        buffer_size=3000,
+        buffer_size=10000,
         batch_size=500,
         policy=policy,
         writer=writer,
         value_function=NNValueFunction(5),
         pol_opt_steps=300,
-        center_advantages=False,
         entropy_constrained=False,
     ),
     ["observations"],
@@ -49,7 +48,7 @@ agent = OrderedDictFlattenTransform(
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(200, 2000)
+trainer.train(30, 2000, number_rollouts=3)
 
 policy.set_eval_mode(True)
 

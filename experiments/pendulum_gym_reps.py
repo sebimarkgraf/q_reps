@@ -37,7 +37,6 @@ policy = GaussianMLP(
 agent = REPS(
     buffer_size=2000,
     batch_size=100,
-    epsilon=1.0,
     policy=policy,
     writer=writer,
     value_function=SimpleValueFunction(NUM_FEATURES, feature_fn=feature_fn),

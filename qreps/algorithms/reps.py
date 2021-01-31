@@ -12,7 +12,6 @@ from torch.utils.tensorboard import SummaryWriter
 from qreps.memory.replay_buffer import ReplayBuffer
 from qreps.policies.direct_set_policy import DirectSetPolicy
 from qreps.policies.stochasticpolicy import StochasticPolicy
-from qreps.util import center_advantages, to_torch
 
 logger = logging.getLogger("reps")
 logger.addHandler(logging.NullHandler())
@@ -27,7 +26,6 @@ class REPS(base.Agent, nn.Module):
         policy: StochasticPolicy,
         value_function,
         writer: SummaryWriter = None,
-        center_advantages=False,
         dual_opt_steps=500,
         pol_opt_steps=300,
         batch_size=1000,
@@ -37,6 +35,9 @@ class REPS(base.Agent, nn.Module):
         optimize_policy=True,
         entropy_constrained=True,
         eta=0.5,  # Default from Q-REPS paper
+        dual_optimizer=torch.optim.Adam,
+        dual_lr=1e-2,
+        reward_transformer=None,
     ):
         super().__init__()
 
@@ -58,13 +59,13 @@ class REPS(base.Agent, nn.Module):
         self.policy = policy
         self.pol_opt_steps = pol_opt_steps
 
-        self.center_advantages = center_advantages
         self.buffer = ReplayBuffer(buffer_size)
         self.writer = writer
         self.batch_size = batch_size
         self.pol_optimizer = optimizer(self.parameters(), lr=lr)
-        self.dual_optimizer = torch.optim.Adam(self.parameters(), lr=1e-2)
+        self.dual_optimizer = dual_optimizer(self.parameters(), lr=dual_lr)
         self.optimize_policy = optimize_policy
+        self.reward_transformer = reward_transformer
 
     def dual(
         self, features: Tensor, features_next: Tensor, rewards: Tensor, _actions: Tensor
@@ -81,19 +82,33 @@ class REPS(base.Agent, nn.Module):
         value = self.value_function(features)
         weights = self.calc_weights(features, features_next, rewards)
         normalizer = torch.logsumexp(weights, dim=0)
-        # print(f"Eta: {self.log_eta}, Normalizer: {normalizer}, Weights {weights}")
         dual = self.eta() * (self.epsilon + normalizer) + (1.0 - self.gamma) * value
-        # + l2_reg_dual * (torch.square(self.eta) + torch.square(1 / self.eta))
 
         return dual.mean(0)
 
     def select_action(self, timestep: dm_env.TimeStep) -> Union[int, np.array]:
-        """Selects actions using current policy in an on-policy setting"""
+        """
+        Selects actions using current policy in an on-policy setting.
+
+        @param timestep: the current timestep containg the observation
+        @return: An action confirming to the dm_control numpy or int convention
+        """
         obs_feat = torch.tensor(timestep.observation).float()
         action = self.policy.sample(obs_feat)
         return action
 
-    def optimize_loss(self, loss_fn: Callable, optimizer, optimizer_steps=300):
+    def optimize_loss(
+        self, loss_fn: Callable, optimizer: torch.optim.Optimizer, optimizer_steps=300
+    ):
+        """
+        Optimize the specified loss using batch gradient descent.
+
+        Allows to specify an optimizer and is compatible with L-BFGS, Adam and SGD.
+
+        @param loss_fn: the loss function which should be minimized.
+        @param optimizer: the torch optimizer to use
+        @param optimizer_steps: how many steps to do the optimization
+        """
         (
             next_observations,
             actions,
@@ -102,6 +117,9 @@ class REPS(base.Agent, nn.Module):
             observations,
         ) = self.buffer.get_all()
 
+        # This is implemented using a closure mainly due to the potential usage of BFGS
+        # BFGS needs to evaluate the function multiple times and therefore needs a defined closure
+        # All other optimizers handle the closure just fine as well, but only execute it once
         def closure():
             optimizer.zero_grad()
             loss = loss_fn(observations, next_observations, rewards, actions)
@@ -111,9 +129,16 @@ class REPS(base.Agent, nn.Module):
         for i in range(optimizer_steps):
             optimizer.step(closure)
 
-        return closure()
-
     def bellman_error(self, features, features_next, rewards):
+        """
+        Calculates the bellman or TD-error as difference between current and next state.
+
+        The calculation respects the specified gamma. The implementation works with batches.
+        @param features: the features of the current state
+        @param features_next:  the features of the next state
+        @param rewards: the received rewards.
+        @return:
+        """
         value = self.value_function(features)
         value_next = self.value_function(features_next)
         value_target = rewards + self.gamma * value_next
@@ -124,7 +149,17 @@ class REPS(base.Agent, nn.Module):
         return torch.exp(self.log_eta) + float(1e-6)
 
     def get_normalized_rewards(self, rewards):
-        return (rewards - rewards.mean(0)) / rewards.std()
+        """
+        Get the transformed rewards for the given rewards.
+
+        Applies the specified transformers.
+        @param rewards: rewards to transform
+        @return: the transformed rewards
+        """
+        if self.reward_transformer is not None:
+            return self.reward_transformer(rewards)
+        else:
+            return rewards
 
     def calc_weights(
         self, features: Tensor, features_next: Tensor, rewards: Tensor
@@ -140,10 +175,6 @@ class REPS(base.Agent, nn.Module):
         advantage = self.bellman_error(
             features, features_next, self.get_normalized_rewards(rewards)
         )
-
-        if self.center_advantages:
-            advantage = center_advantages(advantage)
-
         weights = advantage / self.eta()
         return weights
 
@@ -157,20 +188,16 @@ class REPS(base.Agent, nn.Module):
             observations,
         ) = self.buffer.get_all()
         dual_loss = self.dual(observations, next_observations, rewards, actions)
-        # pol_loss = self.nll_loss(observations, next_observations, rewards, actions)
+        pol_loss = self.nll_loss(observations, next_observations, rewards, actions)
         dist_before = self.policy.distribution(observations)
 
         logger.info(
             f"Iteration {iteration} Before, Sum reward: {torch.sum(rewards):.2f}, Dual Loss: {dual_loss.item():.2f}, "
-            # f"Policy Loss {pol_loss.item():.2f}"
+            f"Policy Loss {pol_loss.item():.2f}"
         )
 
-        rewards = to_torch(rewards)
-        actions = to_torch(actions)
+        self.optimize_loss(self.dual, self.dual_optimizer, optimizer_steps=300)
 
-        dual_loss = self.optimize_loss(
-            self.dual, self.dual_optimizer, optimizer_steps=300
-        )
         if isinstance(self.policy, DirectSetPolicy):
             self.optimize_policy = False
             self.policy.set_likelihoods(
@@ -180,38 +207,26 @@ class REPS(base.Agent, nn.Module):
             )
 
         if self.optimize_policy is True:
-            pol_loss = self.optimize_loss(self.nll_loss, self.pol_optimizer)
-        else:
-            pol_loss = torch.tensor(0)
+            self.optimize_loss(self.nll_loss, self.pol_optimizer)
 
         self.buffer.reset()
 
         dual_loss = self.dual(observations, next_observations, rewards, actions)
-        # pol_loss = self.nll_loss(observations, next_observations, rewards, actions)
+        pol_loss = self.nll_loss(observations, next_observations, rewards, actions)
         dist_after = self.policy.distribution(observations)
         kl_loss = torch.distributions.kl_divergence(dist_before, dist_after).mean(0)
-        # kl_samples = self.kl_loss(
-        #    self.calc_weights(observations, next_observations, rewards)
-        # ).item()
-
-        print(self.policy._policy)
 
         logger.info(
             f"Iteration {iteration} After, Sum reward: {torch.sum(rewards):.2f}, Dual Loss: {dual_loss.item():.2f}, "
             f"Policy Loss {pol_loss.item():.2f}, "
-            f"KL Loss {kl_loss.item():.2f}, "
-            # f"KL Samples {kl_samples:.2f}"
+            f"KL Loss {kl_loss.item():.2f}"
         )
         if self.writer is not None:
-            # self.writer.add_scalar("train/pol_loss", pol_loss, iteration)
+            self.writer.add_scalar("train/pol_loss", pol_loss, iteration)
             self.writer.add_scalar("train/reward", torch.sum(rewards), iteration)
             self.writer.add_scalar("train/dual_loss", dual_loss, iteration)
             self.writer.add_histogram("train/actions", actions, iteration)
             self.writer.add_scalar("train/kl_loss_mean", kl_loss, iteration)
-            # self.writer.add_scalar("train/kl_samples", kl_samples, iteration)
-
-    def kl_loss(self, weights):
-        return torch.sum(torch.log(weights) * weights * weights.shape[0])
 
     def nll_loss(self, observations, next_observations, rewards, actions):
         weights = self.calc_weights(observations, next_observations, rewards)

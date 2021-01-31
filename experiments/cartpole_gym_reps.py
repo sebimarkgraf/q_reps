@@ -5,7 +5,7 @@ from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.reps import REPS
-from qreps.policies.policy import CategoricalMLP
+from qreps.policies.categorical_mlp import CategoricalMLP
 from qreps.trainer import Trainer
 from qreps.valuefunctions.value_functions import SimpleValueFunction
 
@@ -27,16 +27,15 @@ policy = CategoricalMLP(num_obs, 2)
 agent = REPS(
     buffer_size=5000,
     batch_size=50,
-    epsilon=1.0,
     policy=policy,
     value_function=SimpleValueFunction(num_obs),
-    gamma=1.0,
+    gamma=0.9,
     writer=writer,
 )
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(10, 200, number_rollouts=15)
+trainer.train(10, 200, number_rollouts=5)
 
 policy.set_eval_mode(True)
 
