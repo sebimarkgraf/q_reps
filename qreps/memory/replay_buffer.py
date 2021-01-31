@@ -8,12 +8,11 @@ import torch
 class ReplayBuffer(object):
     """A simple Python replay buffer."""
 
-    def __init__(self, capacity, discount=1.0):
+    def __init__(self, capacity):
         self._prev = None
         self._action = None
         self._latest = None
         self.buffer = collections.deque(maxlen=capacity)
-        self.discount = discount
 
     def push(self, timestep: dm_env.TimeStep, action, new_timestep: dm_env.TimeStep):
 
@@ -21,8 +20,8 @@ class ReplayBuffer(object):
             (
                 new_timestep.observation,
                 action,
-                timestep.reward,
-                timestep.discount,
+                new_timestep.reward,
+                new_timestep.discount,
                 timestep.observation,
             )
         )
@@ -35,7 +34,7 @@ class ReplayBuffer(object):
             torch.tensor(obs_tm1).float(),
             torch.tensor(a_tm1).float(),
             torch.tensor(r_t).float(),
-            torch.tensor(discount_t).float() * self.discount,
+            torch.tensor(discount_t).float(),
             torch.tensor(obs_t).float(),
         )
 
@@ -45,7 +44,7 @@ class ReplayBuffer(object):
             torch.tensor(obs_tm1).float(),
             torch.tensor(a_tm1).float(),
             torch.tensor(r_t).float(),
-            torch.tensor(discount_t).float() * self.discount,
+            torch.tensor(discount_t).float(),
             torch.tensor(obs_t).float(),
         )
 

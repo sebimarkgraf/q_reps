@@ -5,8 +5,9 @@ from qreps.policies.stochasticpolicy import StochasticPolicy
 
 class DirectSetPolicy(StochasticPolicy):
     def __init__(self, n_states: int, n_actions: int, *args, **kwargs):
-        super(DirectSetPolicy, self).__init__(*args, **kwargs)
-
+        super(DirectSetPolicy, self).__init__(
+            feature_fn=lambda x: x.long(), *args, **kwargs
+        )
         # Initialize with same prob for all actions in each state
         _policy = torch.ones((n_states, n_actions))
         _policy /= torch.sum(_policy, 1, keepdim=True)
@@ -23,6 +24,7 @@ class DirectSetPolicy(StochasticPolicy):
 
     def set_likelihoods(self, feat, actions, weights):
         for s, a, w in zip(feat.long(), actions.long(), weights):
+            print(w)
             self._policy[s, a] = torch.exp(w)
 
     @torch.no_grad()

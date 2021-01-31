@@ -37,12 +37,12 @@ agent = OrderedDictFlattenTransform(
     REPS(
         buffer_size=3000,
         batch_size=500,
-        epsilon=1.0,
         policy=policy,
         writer=writer,
         value_function=NNValueFunction(5),
         pol_opt_steps=300,
         center_advantages=False,
+        entropy_constrained=False,
     ),
     ["observations"],
 )

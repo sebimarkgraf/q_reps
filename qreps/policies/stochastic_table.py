@@ -17,9 +17,8 @@ class StochasticTablePolicy(StochasticPolicy, nn.Module):
         return super(StochasticTablePolicy, self).forward(x)
 
     def distribution(self, observation):
-        return torch.distributions.Categorical(
-            logits=self._policy[self.forward(observation)]
-        )
+        logits = self._policy[self.forward(observation)]
+        return torch.distributions.Categorical(logits=logits)
 
     def log_likelihood(self, feat, taken_actions) -> torch.FloatTensor:
         return self.distribution(feat).log_prob(taken_actions)

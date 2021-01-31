@@ -8,7 +8,6 @@ from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.reps import REPS
 from qreps.policies.stochastic_table import StochasticTablePolicy
-from qreps.policies.value_function_policy import ValueFunctionPolicy
 from qreps.trainer import Trainer
 from qreps.valuefunctions.value_functions import SimpleValueFunction
 
@@ -52,17 +51,15 @@ agent = REPS(
     buffer_size=5000,
     batch_size=50,
     writer=writer,
-    epsilon=2.0,
     policy=policy,
     center_advantages=False,
     value_function=value_function,
-    gamma=0.9,
     optimize_policy=True,
 )
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(num_iterations=10, max_steps=100, number_rollouts=5)
+trainer.train(num_iterations=10, max_steps=30, number_rollouts=10)
 policy.set_eval_mode(True)
 
 val_reward = trainer.validate(5, 100)
