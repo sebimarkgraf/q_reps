@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABCMeta, abstractmethod
 from typing import Union
 
 import numpy as np
@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 
 
-class StochasticPolicy(ABC):
+class StochasticPolicy(nn.Module, metaclass=ABCMeta):
     """Policy base class providing necessary interface for all derived policies.
     A policy provides two main mechanisms:
     * Sampling an action giving one observation necessary for running the policy
@@ -40,6 +40,6 @@ class StochasticPolicy(ABC):
         return self.feature_fn(x)
 
     @abstractmethod
-    def distribution(self, x):
+    def distribution(self, x) -> torch.distributions.Distribution:
         """Return the distribution to a specific observation"""
         pass

@@ -13,9 +13,7 @@ class GaussianMLPStochasticPolicy(StochasticPolicy, nn.Module):
     When set to eval mode returns the mean as action for every observation.
     """
 
-    def __init__(
-        self, obs_shape, act_shape, action_min, action_max, sigma=1.0, *args, **kwargs
-    ):
+    def __init__(self, obs_shape, act_shape, sigma=1.0, *args, **kwargs):
         super(GaussianMLPStochasticPolicy, self).__init__(*args, **kwargs)
         self.model = nn.Sequential(
             nn.Linear(obs_shape, 128),
@@ -25,8 +23,6 @@ class GaussianMLPStochasticPolicy(StochasticPolicy, nn.Module):
             nn.Linear(128, act_shape),
         )
         self.log_sigma = nn.Parameter(torch.tensor(sigma))
-        self.action_max = action_max
-        self.action_min = action_min
 
     def forward(self, x):
         return self.model(super(GaussianMLPStochasticPolicy, self).forward(x))

@@ -1,5 +1,5 @@
 import numpy as np
-from dm_env import Environment, truncation
+from dm_env import Environment, transition, truncation
 
 
 class Trainer:
@@ -8,6 +8,7 @@ class Trainer:
     def __init__(self):
         self.env = None
         self.algo = None
+        self.iter = 0
 
     def setup(self, algo, env: Environment):
         self.env = env
@@ -65,4 +66,6 @@ class Trainer:
             for rollout in range(number_rollouts):
                 self._obtain_episode(max_steps)
 
-            self.algo.update_policy(iteration)
+            self.algo.update_policy(self.iter)
+            # Count global iterations
+            self.iter += 1

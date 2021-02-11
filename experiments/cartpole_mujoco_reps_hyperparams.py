@@ -26,14 +26,13 @@ env: Environment = balance(
 
 config = {
     "sigma": 1.0,
-    "num_rollouts": 10,
-    "gamma": 0.8291865624395334,
-    "eta": 0.001144007206308473,
-    "dual_lr": 0.04010895603721446,
-    "lr": 0.04668508561336196,
-    "max_steps": 500,
+    "num_rollouts": tune.grid_search([3, 5, 10, 15]),
+    "gamma": tune.uniform(0.8, 1.0),
+    "eta": tune.loguniform(2e-4, 2e-1, 10),
+    "dual_lr": tune.loguniform(1e-3, 1e-1),
+    "lr": tune.loguniform(1e-3, 1e-1),
+    "max_steps": 200,
 }
-writer = SummaryWriter(comment="_mujuco_reps_optimized")
 
 
 def train(config: dict):
@@ -53,7 +52,6 @@ def train(config: dict):
             eta=config["eta"],
             dual_lr=config["dual_lr"],
             lr=config["lr"],
-            writer=writer,
         ),
         ["observations"],
     )
@@ -61,7 +59,7 @@ def train(config: dict):
     trainer = Trainer()
     trainer.setup(agent, env)
     trainer.train(
-        num_iterations=30,
+        num_iterations=10,
         max_steps=config["max_steps"],
         number_rollouts=config["num_rollouts"],
     )
@@ -70,15 +68,24 @@ def train(config: dict):
 
     tune.report(reward=torch.sum(torch.tensor(val_reward)).item())
 
-    return agent
+
+analysis = tune.run(train, config=config, metric="reward", mode="max", num_samples=10)
 
 
-agent = train(config)
+# def eval_func(timestep):
+##    action = agent.select_action(timestep)
+#    return action
 
+# viewer.launch(env, eval_func)
 
-def eval_func(timestep):
-    action = agent.select_action(timestep)
-    return action
-
-
-viewer.launch(env, eval_func)
+# t best trial: 31643_00006 with
+#   reward=1969.2981863081154
+# and parameters = {
+#   'sigma': 1.0,
+#   'num_rollouts': 10,
+#   'gamma': 0.8291865624395334,
+#   'eta': 0.001144007206308473,
+#   'dual_lr': 0.04010895603721446,
+#   'lr': 0.04668508561336196,
+#   'max_steps': 200
+# }

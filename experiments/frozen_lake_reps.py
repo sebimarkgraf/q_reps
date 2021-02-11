@@ -1,28 +1,29 @@
-import logging
-
 import torch
 import torch.nn.functional as F
 from bsuite.utils import gym_wrapper
-from gym.envs.toy_text import NChainEnv
+from gym.envs.toy_text import FrozenLakeEnv
 from ray import tune
+from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.reps import REPS
 from qreps.policies.stochastic_table import StochasticTablePolicy
 from qreps.trainer import Trainer
 from qreps.valuefunctions.value_functions import SimpleValueFunction
 
-gym_env = NChainEnv(n=5, slip=0.2, small=0.1)
+gym_env = FrozenLakeEnv()
 env = gym_wrapper.DMEnvFromGym(gym_env)
 obs_num = env.observation_spec().num_values
 act_num = env.action_spec().num_values
 
 config = {
-    "num_rollouts": tune.grid_search([3, 5, 10, 15]),
-    "gamma": tune.uniform(0.8, 1.0),
-    "eta": tune.loguniform(2e-4, 2e-1, 10),
-    "dual_lr": tune.loguniform(1e-3, 1e-1),
-    "lr": tune.loguniform(1e-3, 1e-1),
+    "num_rollouts": 5,
+    "gamma": 1.0,
+    "eta": 0.1,
+    "dual_lr": 2e-2,
+    "lr": 2e-2,
 }
+
+writer = SummaryWriter(comment="_frozen_lake_reps")
 
 
 def train(config: dict):
@@ -41,19 +42,17 @@ def train(config: dict):
         eta=config["eta"],
         dual_lr=config["dual_lr"],
         lr=config["lr"],
+        writer=writer,
     )
 
     trainer = Trainer()
     trainer.setup(agent, env)
     trainer.train(
-        num_iterations=10, max_steps=30, number_rollouts=config["num_rollouts"]
+        num_iterations=50, max_steps=30, number_rollouts=config["num_rollouts"]
     )
     policy.set_eval_mode(True)
     val_reward = trainer.validate(5, 100)
     tune.report(reward=torch.sum(torch.tensor(val_reward)).item())
 
 
-analysis = tune.run(train, config=config, metric="reward", mode="max", num_samples=30)
-
-
-print(analysis.best_config)
+train(config)

@@ -18,8 +18,12 @@ def positive_advantages(advantages, eps=1e-12):
 
 
 def integrate_discrete(func, distribution: torch.distributions.Distribution):
+    value = 0
     for action in distribution.enumerate_support():
-        func(action)
+        q_values = func(action)
+        log_probs = distribution.log_prob(action)
+        value += q_values * torch.exp(log_probs.detach())
+    return value
 
 
 def integrate_continuous(
@@ -28,11 +32,11 @@ def integrate_continuous(
     value = torch.zeros(distribution.batch_shape)
     for _ in range(samples):
         if distribution.has_rsample:
-            action = distribution.rsample()
+            action = distribution.rsample().detach()
         else:
-            action = distribution.sample()
+            action = distribution.sample().detach()
         value += func(action)
-    return value.mean(0)
+    return value / samples
 
 
 def integrate(

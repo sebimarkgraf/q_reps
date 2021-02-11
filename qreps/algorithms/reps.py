@@ -9,6 +9,7 @@ from bsuite.baselines import base
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 
+from qreps.algorithms.abstract_algorithm import AbstractAlgorithm
 from qreps.memory.replay_buffer import ReplayBuffer
 from qreps.policies.direct_set_policy import DirectSetPolicy
 from qreps.policies.stochasticpolicy import StochasticPolicy
@@ -17,7 +18,7 @@ logger = logging.getLogger("reps")
 logger.addHandler(logging.NullHandler())
 
 
-class REPS(base.Agent, nn.Module):
+class REPS(AbstractAlgorithm):
     """Feed-forward actor-critic agent."""
 
     def __init__(
@@ -25,7 +26,6 @@ class REPS(base.Agent, nn.Module):
         buffer_size: int,
         policy: StochasticPolicy,
         value_function,
-        writer: SummaryWriter = None,
         dual_opt_steps=500,
         pol_opt_steps=300,
         batch_size=1000,
@@ -38,8 +38,10 @@ class REPS(base.Agent, nn.Module):
         dual_optimizer=torch.optim.Adam,
         dual_lr=1e-2,
         reward_transformer=None,
+        *args,
+        **kwargs,
     ):
-        super().__init__()
+        super().__init__(*args, **kwargs)
 
         # Setup for dual
         if entropy_constrained:
@@ -59,11 +61,11 @@ class REPS(base.Agent, nn.Module):
         self.policy = policy
         self.pol_opt_steps = pol_opt_steps
 
-        self.buffer = ReplayBuffer(buffer_size)
-        self.writer = writer
         self.batch_size = batch_size
-        self.pol_optimizer = optimizer(self.parameters(), lr=lr)
-        self.dual_optimizer = dual_optimizer(self.parameters(), lr=dual_lr)
+        self.pol_optimizer = optimizer(self.policy.parameters(), lr=lr)
+        self.dual_optimizer = dual_optimizer(
+            self.value_function.parameters(), lr=dual_lr
+        )
         self.optimize_policy = optimize_policy
         self.reward_transformer = reward_transformer
 
@@ -79,10 +81,10 @@ class REPS(base.Agent, nn.Module):
         @param _actions: action for having the same signature in dual and nll_loss
         @return: the calculated dual function value, supporting autograd of PyTorch
         """
-        value = self.value_function(features)
+        # value = self.value_function(features)
         weights = self.calc_weights(features, features_next, rewards)
         normalizer = torch.logsumexp(weights, dim=0)
-        dual = self.eta() * (self.epsilon + normalizer) + (1.0 - self.gamma) * value
+        dual = self.eta() * (self.epsilon + normalizer)  # + (1.0 - self.gamma) * value
 
         return dual.mean(0)
 
@@ -187,14 +189,7 @@ class REPS(base.Agent, nn.Module):
             discounts,
             observations,
         ) = self.buffer.get_all()
-        dual_loss = self.dual(observations, next_observations, rewards, actions)
-        pol_loss = self.nll_loss(observations, next_observations, rewards, actions)
         dist_before = self.policy.distribution(observations)
-
-        logger.info(
-            f"Iteration {iteration} Before, Sum reward: {torch.sum(rewards):.2f}, Dual Loss: {dual_loss.item():.2f}, "
-            f"Policy Loss {pol_loss.item():.2f}"
-        )
 
         self.optimize_loss(self.dual, self.dual_optimizer, optimizer_steps=300)
 
@@ -210,23 +205,24 @@ class REPS(base.Agent, nn.Module):
             self.optimize_loss(self.nll_loss, self.pol_optimizer)
 
         self.buffer.reset()
-
         dual_loss = self.dual(observations, next_observations, rewards, actions)
-        pol_loss = self.nll_loss(observations, next_observations, rewards, actions)
         dist_after = self.policy.distribution(observations)
-        kl_loss = torch.distributions.kl_divergence(dist_before, dist_after).mean(0)
 
-        logger.info(
-            f"Iteration {iteration} After, Sum reward: {torch.sum(rewards):.2f}, Dual Loss: {dual_loss.item():.2f}, "
-            f"Policy Loss {pol_loss.item():.2f}, "
-            f"KL Loss {kl_loss.item():.2f}"
+        self.report_tensorboard(
+            observations,
+            next_observations,
+            rewards,
+            actions,
+            dist_before,
+            dist_after,
+            iteration,
         )
         if self.writer is not None:
-            self.writer.add_scalar("train/pol_loss", pol_loss, iteration)
-            self.writer.add_scalar("train/reward", torch.sum(rewards), iteration)
             self.writer.add_scalar("train/dual_loss", dual_loss, iteration)
-            self.writer.add_histogram("train/actions", actions, iteration)
-            self.writer.add_scalar("train/kl_loss_mean", kl_loss, iteration)
+
+        logger.info(
+            f"Iteration {iteration} After, Sum reward: {torch.sum(rewards):.2f}, Dual Loss: {dual_loss.item():.2f}"
+        )
 
     def nll_loss(self, observations, next_observations, rewards, actions):
         weights = self.calc_weights(observations, next_observations, rewards)
@@ -241,3 +237,6 @@ class REPS(base.Agent, nn.Module):
         new_timestep: dm_env.TimeStep,
     ):
         self.buffer.push(timestep, action, new_timestep)
+
+    def save(self, filename: str):
+        return torch.save(self, filename)
