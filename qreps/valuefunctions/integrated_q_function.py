@@ -20,6 +20,6 @@ class IntegratedQFunction(AbstractValueFunction):
 
     def forward(self, obs):
         def q_for_obs(action):
-            return self.q_func(action)
+            return self.q_func(obs, action)
 
         return integrate(q_for_obs, self.policy.distribution(obs))

@@ -20,6 +20,8 @@ class GaussianMLPStochasticPolicy(StochasticPolicy, nn.Module):
             nn.ReLU(),
             nn.Linear(128, 128),
             nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
             nn.Linear(128, act_shape),
         )
         self.log_sigma = nn.Parameter(torch.tensor(sigma))

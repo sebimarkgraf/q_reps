@@ -1,4 +1,5 @@
 import logging
+import math
 from collections import Callable
 from typing import Union
 
@@ -96,8 +97,7 @@ class QREPS(AbstractAlgorithm):
         N = features.shape[0]
         h = torch.ones((self.saddle_point_steps, N))
         # Initialize z as uniform distribution over all samples
-        z = torch.ones((self.saddle_point_steps, N))
-        z /= torch.sum(z, dim=1, keepdim=True)
+        log_z = torch.zeros((self.saddle_point_steps, N))
 
         # Keep history of parameters for averaging
         # If changing to other functions than linear as features, this should be changes to take all parameters
@@ -109,7 +109,8 @@ class QREPS(AbstractAlgorithm):
             self.theta_opt.zero_grad()
             # s_loss = self.S_k(z[tau - 1].detach(), N, features, features_next, actions, rewards)
             # s_loss.backward()
-            sample_index = torch.multinomial(z[tau], 1)
+            z_dist = torch.distributions.Categorical(logits=log_z[tau])
+            sample_index = z_dist.sample((1,))
             x, a = features[sample_index], actions[sample_index]
             x1 = features_next[sample_index]
             a1 = self.theta_policy(x1)
@@ -119,8 +120,8 @@ class QREPS(AbstractAlgorithm):
 
             # Sampler
             with torch.no_grad():
-                z[tau] = z[tau - 1] * torch.exp(self.beta_2 * h[tau - 1])
-                z[tau] /= torch.sum(z[tau])
+
+                log_z[tau] = log_z[tau - 1] + self.beta_2 * h[tau - 1]
 
                 bellman = empirical_bellman_error(
                     features,
@@ -131,13 +132,27 @@ class QREPS(AbstractAlgorithm):
                     self.value_function,
                     self.discount,
                 )
-                h[tau] = bellman - 1 / self.eta * torch.log(N * z[tau])
+                h[tau] = bellman - (math.log(N) + log_z[tau]) / self.eta
+
+            if (
+                torch.isnan(log_z[tau]).any()
+                or torch.isnan(h[tau]).any()
+                or torch.isnan(bellman).any()
+            ):
+                print(tau)
+                print(h[tau - 1])
+                print(log_z[tau - 1])
+                print(h[tau])
+                print(log_z[tau])
+                print(bellman)
+                print(rewards)
+                raise RuntimeError("Ran into nan")
 
         # Average over the weights
         with torch.no_grad():
             self.theta.weight.data = torch.mean(theta_hist, 0)
 
-        return self.S_k(z, N, features, features_next, actions, rewards)
+        return self.S_k(log_z[-1], N, features, features_next, actions, rewards)
 
     def S_k(self, z, N, features, features_next, actions, rewards):
         bellman_error = empirical_bellman_error(
@@ -149,7 +164,7 @@ class QREPS(AbstractAlgorithm):
             self.value_function,
             discount=self.discount,
         )
-        loss = torch.sum(z * (bellman_error - torch.log(N * z) / self.eta))
+        loss = torch.sum(torch.exp(z) * (bellman_error - (math.log(N) + z) / self.eta))
         # + (1 - self.discount) * self.value_function(features))
         return loss
 
@@ -175,6 +190,7 @@ class QREPS(AbstractAlgorithm):
             discounts,
             observations,
         ) = self.buffer.get_all()
+        rewards = self.get_rewards(rewards)
         pol_loss = self.nll_loss(observations, next_observations, rewards, actions)
         dist_before = self.policy.distribution(observations)
 
@@ -190,15 +206,22 @@ class QREPS(AbstractAlgorithm):
 
         self.buffer.reset()
 
-        elbe_loss = empirical_bellman_error(
-            observations,
-            next_observations,
-            actions,
-            rewards,
-            self.q_function,
-            self.value_function,
-            self.discount,
-        ).sum(0)
+        elbe_loss = (
+            1
+            / self.eta
+            * torch.logsumexp(
+                empirical_bellman_error(
+                    observations,
+                    next_observations,
+                    actions,
+                    rewards,
+                    self.q_function,
+                    self.value_function,
+                    self.discount,
+                ),
+                0,
+            )
+        )
         dist_after = self.policy.distribution(observations)
         self.report_tensorboard(
             observations,
@@ -214,7 +237,7 @@ class QREPS(AbstractAlgorithm):
             self.writer.add_scalar("train/qreps_loss", qreps_loss, iteration)
 
     def optimize_loss(
-        self, loss_fn: Callable, optimizer: torch.optim.Optimizer, optimizer_steps=300
+        self, loss_fn: Callable, optimizer: torch.optim.Optimizer, optimizer_steps=50
     ):
         """
         Optimize the specified loss using batch gradient descent.

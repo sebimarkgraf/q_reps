@@ -8,9 +8,13 @@ class CategoricalMLP(StochasticPolicy, nn.Module):
     def __init__(self, obs_shape, act_shape, *args, **kwargs):
         super(CategoricalMLP, self).__init__(*args, **kwargs)
         self.model = nn.Sequential(
-            nn.Linear(obs_shape, 128),
+            nn.Linear(obs_shape, 200),
             nn.ReLU(),
-            nn.Linear(128, act_shape),
+            nn.Linear(200, 200),
+            nn.ReLU(),
+            nn.Linear(200, 200),
+            nn.ReLU(),
+            nn.Linear(200, act_shape),
             nn.Softmax(dim=-1),
         )
 

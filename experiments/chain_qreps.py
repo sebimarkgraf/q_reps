@@ -18,7 +18,7 @@ FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
-gym_env = NChainEnv(n=5, slip=0, small=0.1)
+gym_env = NChainEnv(n=5, slip=0, small=0.01, large=1.0)
 env = gym_wrapper.DMEnvFromGym(gym_env)
 obs_num = env.observation_spec().num_values
 act_num = env.action_spec().num_values
@@ -67,7 +67,7 @@ agent = QREPS(
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(num_iterations=10, max_steps=30, number_rollouts=3)
+trainer.train(num_iterations=5, max_steps=30, number_rollouts=10)
 policy.set_eval_mode(True)
 
 val_reward = trainer.validate(5, 100)

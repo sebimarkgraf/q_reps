@@ -26,8 +26,8 @@ class REPS(AbstractAlgorithm):
         buffer_size: int,
         policy: StochasticPolicy,
         value_function,
-        dual_opt_steps=500,
-        pol_opt_steps=300,
+        dual_opt_steps=150,
+        pol_opt_steps=150,
         batch_size=1000,
         gamma=1.0,
         lr=1e-3,
@@ -37,7 +37,6 @@ class REPS(AbstractAlgorithm):
         eta=0.5,  # Default from Q-REPS paper
         dual_optimizer=torch.optim.Adam,
         dual_lr=1e-2,
-        reward_transformer=None,
         *args,
         **kwargs,
     ):
@@ -46,7 +45,7 @@ class REPS(AbstractAlgorithm):
         # Setup for dual
         if entropy_constrained:
             # Original formulation of REPS with constrained entropy
-            self.log_eta = nn.Parameter(torch.log(torch.tensor(1.0)))
+            self.log_eta = nn.Parameter(torch.tensor(0.0))
             self.epsilon = torch.tensor(eta)
         else:
             # Formulation of REPS as mirror descent with entropy regularization
@@ -67,7 +66,6 @@ class REPS(AbstractAlgorithm):
             self.value_function.parameters(), lr=dual_lr
         )
         self.optimize_policy = optimize_policy
-        self.reward_transformer = reward_transformer
 
     def dual(
         self, features: Tensor, features_next: Tensor, rewards: Tensor, _actions: Tensor
@@ -81,10 +79,10 @@ class REPS(AbstractAlgorithm):
         @param _actions: action for having the same signature in dual and nll_loss
         @return: the calculated dual function value, supporting autograd of PyTorch
         """
-        # value = self.value_function(features)
+        value = self.value_function(features)
         weights = self.calc_weights(features, features_next, rewards)
         normalizer = torch.logsumexp(weights, dim=0)
-        dual = self.eta() * (self.epsilon + normalizer)  # + (1.0 - self.gamma) * value
+        dual = self.eta() * (self.epsilon + normalizer) + (1.0 - self.gamma) * value
 
         return dual.mean(0)
 
@@ -150,19 +148,6 @@ class REPS(AbstractAlgorithm):
         """Eta as a function from the logarithm. Forces eta to be positive"""
         return torch.exp(self.log_eta) + float(1e-6)
 
-    def get_normalized_rewards(self, rewards):
-        """
-        Get the transformed rewards for the given rewards.
-
-        Applies the specified transformers.
-        @param rewards: rewards to transform
-        @return: the transformed rewards
-        """
-        if self.reward_transformer is not None:
-            return self.reward_transformer(rewards)
-        else:
-            return rewards
-
     def calc_weights(
         self, features: Tensor, features_next: Tensor, rewards: Tensor
     ) -> Tensor:
@@ -175,7 +160,7 @@ class REPS(AbstractAlgorithm):
         @return: Tuple of the weights, calculated advantages
         """
         advantage = self.bellman_error(
-            features, features_next, self.get_normalized_rewards(rewards)
+            features, features_next, self.get_rewards(rewards)
         )
         weights = advantage / self.eta()
         return weights
@@ -190,6 +175,7 @@ class REPS(AbstractAlgorithm):
             observations,
         ) = self.buffer.get_all()
         dist_before = self.policy.distribution(observations)
+        rewards = self.get_rewards(rewards)
 
         self.optimize_loss(self.dual, self.dual_optimizer, optimizer_steps=300)
 

@@ -10,13 +10,30 @@ DEFAULT_REPLAY_BUFFER_SIZE = 100000
 
 
 class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
-    def __init__(self, writer: SummaryWriter = None, buffer=None):
+    def __init__(
+        self, writer: SummaryWriter = None, buffer=None, reward_transformer=None
+    ):
         super().__init__()
         self.writer = writer
         if buffer is None:
             self.buffer = ReplayBuffer(DEFAULT_REPLAY_BUFFER_SIZE)
         else:
             self.buffer = buffer
+
+        self.reward_transformer = reward_transformer
+
+    def get_rewards(self, rewards):
+        """
+        Get the transformed rewards for the given rewards.
+
+        Applies the specified transformers.
+        @param rewards: rewards to transform
+        @return: the transformed rewards
+        """
+        if self.reward_transformer is not None:
+            return self.reward_transformer(rewards)
+        else:
+            return rewards
 
     def report_tensorboard(
         self,

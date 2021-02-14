@@ -25,12 +25,12 @@ env: Environment = balance(
 )
 
 config = {
-    "sigma": 1.0,
+    "sigma": 0.4,
     "num_rollouts": 10,
-    "gamma": 0.8291865624395334,
-    "eta": 0.001144007206308473,
-    "dual_lr": 0.04010895603721446,
-    "lr": 0.04668508561336196,
+    "gamma": 1.0,
+    "eta": 1e-5,
+    "dual_lr": 2e-3,
+    "lr": 2e-3,
     "max_steps": 500,
 }
 writer = SummaryWriter(comment="_mujuco_reps_optimized")
@@ -43,7 +43,7 @@ def train(config: dict):
 
     agent = OrderedDictFlattenTransform(
         REPS(
-            buffer_size=10000,
+            buffer_size=50000,
             batch_size=500,
             policy=policy,
             value_function=value_function,

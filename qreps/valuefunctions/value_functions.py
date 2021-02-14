@@ -28,7 +28,11 @@ class NNValueFunction(AbstractValueFunction):
         super().__init__(*args, **kwargs)
         self.feature_fn = feature_fn
         self.model = nn.Sequential(
-            nn.Linear(self.obs_dim, 128), nn.ReLU(), nn.Linear(128, 1, bias=False)
+            nn.Linear(self.obs_dim, 200),
+            nn.ReLU(),
+            nn.Linear(200, 200),
+            nn.ReLU(),
+            nn.Linear(200, 1, bias=False),
         )
 
     def forward(self, x):
