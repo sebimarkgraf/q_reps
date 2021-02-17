@@ -7,14 +7,19 @@ import dm_env
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from bsuite.baselines import base
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.abstract_algorithm import AbstractAlgorithm
 from qreps.elbe import empirical_bellman_error
+from qreps.feature_functions.abstract_feature_function import (
+    AbstractStateActionFeatureFunction,
+)
 from qreps.memory.replay_buffer import ReplayBuffer
 from qreps.policies.stochasticpolicy import StochasticPolicy
+from qreps.util import integrate, torch_batched
 from qreps.valuefunctions.integrated_q_function import IntegratedQFunction
 from qreps.valuefunctions.q_function import AbstractQFunction
 
@@ -27,8 +32,7 @@ class QREPS(AbstractAlgorithm):
 
     def __init__(
         self,
-        feature_fn,
-        num_actions,
+        feature_fn: AbstractStateActionFeatureFunction,
         feature_dim,
         q_function: AbstractQFunction,
         policy: StochasticPolicy,
@@ -61,11 +65,10 @@ class QREPS(AbstractAlgorithm):
         self.optimize_policy = True
         self.alpha = alpha
         self.feature_fn = feature_fn
-        self.num_actions = num_actions
 
     def q_function(self, features, actions):
         feat = self.feature_fn(features, actions)
-        return self.theta(feat).squeeze()
+        return self.theta(feat)
 
     def select_action(self, timestep: dm_env.TimeStep) -> Union[int, np.array]:
         """Selects actions using current policy in an on-policy setting"""
@@ -74,30 +77,38 @@ class QREPS(AbstractAlgorithm):
         return action
 
     def g_hat(self, x_1, a_1, x, a):
-        return (
-            self.discount * self.feature_fn(x_1, a_1)
-            - self.feature_fn(x, a)
-            # + (1 - self.discount) * torch.cat((x_bar, a_bar), dim=-1)
-        )
+        return self.discount * self.feature_fn(x_1, a_1) - self.feature_fn(x, a)
 
     def theta_policy(self, x):
-        actions = torch.arange(self.num_actions).float()
-        state_actions = torch.cartesian_prod(x, actions)
-        states, actions = state_actions[:, 0], state_actions[:, 1]
-        policy_dist = self.policy.distribution(states).log_prob(actions)
-        q_values = (
-            policy_dist
-            * self.alpha
-            * (self.q_function(states, actions) - self.value_function(states))
-        )
-        dist = torch.distributions.Categorical(logits=q_values)
-        return dist.sample((1,))
+        distribution = self.policy.distribution(x)
+        value = self.value_function(x)
+
+        def func(a):
+            return self.alpha * (self.q_function(x, a) - value)
+
+        if not distribution.has_enumerate_support:
+            raise Exception("Not supported distribution for QREPS")
+
+        actions = []
+        values = []
+        for action in distribution.enumerate_support():
+            q_values = func(action.view(1, -1))
+            log_probs = distribution.log_prob(action)
+            value = q_values * torch.exp(log_probs.detach())
+            values.append(value)
+            actions.append(action)
+
+        dist = torch.distributions.Categorical(logits=torch.tensor(values))
+        sample = dist.sample((1,))
+
+        return actions[sample]
 
     def qreps_eval(self, features, features_next, actions, rewards):
         N = features.shape[0]
         h = torch.ones((self.saddle_point_steps, N))
         # Initialize z as uniform distribution over all samples
-        log_z = torch.zeros((self.saddle_point_steps, N))
+        z = torch.ones((self.saddle_point_steps, N))
+        z[0] = z[0] / torch.sum(z[0])
 
         # Keep history of parameters for averaging
         # If changing to other functions than linear as features, this should be changes to take all parameters
@@ -109,19 +120,19 @@ class QREPS(AbstractAlgorithm):
             self.theta_opt.zero_grad()
             # s_loss = self.S_k(z[tau - 1].detach(), N, features, features_next, actions, rewards)
             # s_loss.backward()
-            z_dist = torch.distributions.Categorical(logits=log_z[tau])
-            sample_index = z_dist.sample((1,))
-            x, a = features[sample_index], actions[sample_index]
-            x1 = features_next[sample_index]
-            a1 = self.theta_policy(x1)
-            self.theta.weight.backward(self.g_hat(x1, a1, x, a))
+            z_dist = torch.distributions.Categorical(z[tau])
+            sample_index = z_dist.sample((1,)).item()
+            x, a = features[sample_index].view(1, -1), actions[sample_index].view(1, -1)
+            x1 = features_next[sample_index].view(1, -1)
+            a1 = self.theta_policy(x1).view(1, -1)
+            self.theta.weight.backward(self.g_hat(x1, a1, x, a).squeeze(1))
             self.theta_opt.step()
             theta_hist[tau] = self.theta.weight
 
             # Sampler
             with torch.no_grad():
-
-                log_z[tau] = log_z[tau - 1] + self.beta_2 * h[tau - 1]
+                z[tau] = z[tau - 1] * torch.exp(self.beta_2 * h[tau - 1])
+                z[tau] = F.softmax(z[tau], dim=0)
 
                 bellman = empirical_bellman_error(
                     features,
@@ -132,27 +143,25 @@ class QREPS(AbstractAlgorithm):
                     self.value_function,
                     self.discount,
                 )
-                h[tau] = bellman - (math.log(N) + log_z[tau]) / self.eta
-
+                h[tau] = bellman.squeeze() - torch.log(N * z[tau]) / self.eta
             if (
-                torch.isnan(log_z[tau]).any()
+                torch.isnan(z[tau]).any()
                 or torch.isnan(h[tau]).any()
                 or torch.isnan(bellman).any()
             ):
-                print(tau)
-                print(h[tau - 1])
-                print(log_z[tau - 1])
-                print(h[tau])
-                print(log_z[tau])
-                print(bellman)
-                print(rewards)
+                print(
+                    f"In Iteration {tau} contains NaN:\n"
+                    f"Z: {torch.isnan(z[tau]).any()}, "
+                    f"h: {torch.isnan(h[tau]).any()}, "
+                    f"bellman: {torch.isnan(bellman).any()} "
+                )
                 raise RuntimeError("Ran into nan")
 
         # Average over the weights
         with torch.no_grad():
             self.theta.weight.data = torch.mean(theta_hist, 0)
 
-        return self.S_k(log_z[-1], N, features, features_next, actions, rewards)
+        return self.S_k(z[-1], N, features, features_next, actions, rewards)
 
     def S_k(self, z, N, features, features_next, actions, rewards):
         bellman_error = empirical_bellman_error(
@@ -190,14 +199,13 @@ class QREPS(AbstractAlgorithm):
             discounts,
             observations,
         ) = self.buffer.get_all()
+        if len(observations.shape) < 2:
+            observations = observations.view(-1, 1)
+        if len(next_observations.shape) < 2:
+            next_observations = next_observations.view(-1, 1)
+        actions = actions.view(-1, 1)
         rewards = self.get_rewards(rewards)
-        pol_loss = self.nll_loss(observations, next_observations, rewards, actions)
         dist_before = self.policy.distribution(observations)
-
-        logger.info(
-            f"Iteration {iteration} Before, Sum reward: {torch.sum(rewards):.2f}"
-            f"Policy Loss {pol_loss.item():.2f}"
-        )
 
         qreps_loss = self.qreps_eval(observations, next_observations, actions, rewards)
 
@@ -255,6 +263,12 @@ class QREPS(AbstractAlgorithm):
             discounts,
             observations,
         ) = self.buffer.get_all()
+        if len(observations.shape) < 2:
+            observations = observations.view(-1, 1)
+        if len(next_observations.shape) < 2:
+            next_observations = next_observations.view(-1, 1)
+        actions = actions.view(-1, 1)
+        rewards = self.get_rewards(rewards)
 
         # This is implemented using a closure mainly due to the potential usage of BFGS
         # BFGS needs to evaluate the function multiple times and therefore needs a defined closure

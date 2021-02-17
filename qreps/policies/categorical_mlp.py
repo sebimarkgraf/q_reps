@@ -22,7 +22,8 @@ class CategoricalMLP(StochasticPolicy, nn.Module):
         return self.model(super(CategoricalMLP, self).forward(x))
 
     def distribution(self, observation) -> torch.distributions.Distribution:
-        return torch.distributions.categorical.Categorical(self.forward(observation))
+        output = self.forward(observation)
+        return torch.distributions.categorical.Categorical(output)
 
     @torch.no_grad()
     def sample(self, observation):

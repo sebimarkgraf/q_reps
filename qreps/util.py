@@ -18,25 +18,28 @@ def positive_advantages(advantages, eps=1e-12):
 
 
 def integrate_discrete(func, distribution: torch.distributions.Distribution):
-    value = 0
+    values = torch.zeros(distribution.batch_shape)
     for action in distribution.enumerate_support():
-        q_values = func(action)
+        f_val = func(action)
         log_probs = distribution.log_prob(action)
-        value += q_values * torch.exp(log_probs.detach())
-    return value
+        values += f_val * torch.exp(log_probs.detach())
+    return values
 
 
 def integrate_continuous(
     func: Callable, distribution: torch.distributions.Distribution, samples=15
 ):
-    value = torch.zeros(distribution.batch_shape)
+    values = torch.zeros(distribution.batch_shape)
     for _ in range(samples):
         if distribution.has_rsample:
             action = distribution.rsample().detach()
         else:
             action = distribution.sample().detach()
-        value += func(action)
-    return value / samples
+        f_val = func(action)
+        if f_val.ndim > values.ndim:
+            f_val = f_val.squeeze(-1)
+        values += f_val
+    return values / samples
 
 
 def integrate(
@@ -52,3 +55,13 @@ def integrate(
 
 def episode_normalize_rewards(rewards):
     return (rewards - rewards.mean(0)) / rewards.std()
+
+
+def torch_batched(x: torch.Tensor):
+    if len(x.shape) >= 2:
+        return x
+
+    if len(x.shape) == 0:
+        return x.view(-1, 1)
+
+    return x.view(-1, x.shape[0])

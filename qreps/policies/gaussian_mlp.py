@@ -24,7 +24,7 @@ class GaussianMLPStochasticPolicy(StochasticPolicy, nn.Module):
             nn.ReLU(),
             nn.Linear(128, act_shape),
         )
-        self.log_sigma = nn.Parameter(torch.tensor(sigma))
+        self.log_sigma = torch.log(torch.tensor(sigma))
 
     def forward(self, x):
         return self.model(super(GaussianMLPStochasticPolicy, self).forward(x))

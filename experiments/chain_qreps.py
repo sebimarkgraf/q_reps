@@ -7,6 +7,8 @@ from gym.envs.toy_text import NChainEnv
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.qreps import QREPS
+from qreps.feature_functions.feature_concatenation import FeatureConcatenation
+from qreps.feature_functions.one_hot import OneHotFeature
 from qreps.policies.stochastic_table import StochasticTablePolicy
 from qreps.trainer import Trainer
 from qreps.valuefunctions.q_function import NNQFunction
@@ -25,17 +27,9 @@ act_num = env.action_spec().num_values
 
 writer = SummaryWriter(comment="_chain_qreps")
 
-
-def act_feature_fn(x):
-    return F.one_hot(x.long(), act_num).float()
-
-
-def obs_feature_fn(x):
-    return F.one_hot(x.long(), obs_num).float()
-
-
-def feature_fn(obs, a):
-    return torch.cat((obs_feature_fn(obs), act_feature_fn(a)), dim=-1)
+feature_fn = FeatureConcatenation(
+    obs_feature_fn=OneHotFeature(obs_num), act_feature_fn=OneHotFeature(act_num)
+)
 
 
 def pol_feature_fn(x):
@@ -46,9 +40,8 @@ value_function = NNQFunction(
     obs_dim=obs_num,
     act_dim=act_num,
     feature_fn=feature_fn,
-    act_feature_fn=act_feature_fn,
+    act_feature_fn=OneHotFeature(act_num),
 )
-
 
 policy = StochasticTablePolicy(obs_num, act_num)
 
@@ -59,7 +52,6 @@ agent = QREPS(
     writer=writer,
     policy=policy,
     q_function=value_function,
-    num_actions=act_num,
     eta=5.0,
     alpha=5.0,
     beta=0.05,
@@ -67,7 +59,7 @@ agent = QREPS(
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(num_iterations=5, max_steps=30, number_rollouts=10)
+trainer.train(num_iterations=10, max_steps=30, number_rollouts=10)
 policy.set_eval_mode(True)
 
 val_reward = trainer.validate(5, 100)

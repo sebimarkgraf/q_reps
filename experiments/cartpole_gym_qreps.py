@@ -9,6 +9,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.qreps import QREPS
 from qreps.algorithms.reps import REPS
+from qreps.feature_functions.feature_concatenation import FeatureConcatenation
+from qreps.feature_functions.identity import IdentityFeature
+from qreps.feature_functions.one_hot import OneHotFeature
 from qreps.policies.categorical_mlp import CategoricalMLP
 from qreps.trainer import Trainer
 from qreps.valuefunctions.value_functions import SimpleValueFunction
@@ -32,18 +35,9 @@ num_act = env.action_spec().num_values
 writer = SummaryWriter(comment="_cartpole_gym_qreps")
 policy = CategoricalMLP(num_obs, 2)
 
-
-def act_feature_fn(x):
-    return F.one_hot(x.long(), num_act).float()
-
-
-def obs_feature_fn(x):
-    return x.float()
-
-
-def feature_fn(obs, a):
-    return torch.cat((obs_feature_fn(obs), act_feature_fn(a)), dim=-1)
-
+feature_fn = FeatureConcatenation(
+    obs_feature_fn=IdentityFeature(), act_feature_fn=OneHotFeature(num_classes=num_act)
+)
 
 agent = QREPS(
     feature_fn=feature_fn,
@@ -51,10 +45,11 @@ agent = QREPS(
     buffer_size=5000,
     writer=writer,
     policy=policy,
-    eta=0.1,
-    alpha=0.1,
-    beta=0.05,
-    num_actions=num_act,
+    eta=0.01,
+    alpha=0.01,
+    beta=0.08,
+    beta_2=0.1,
+    discount=0.99,
     q_function=None,
 )
 
