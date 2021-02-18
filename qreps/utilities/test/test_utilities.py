@@ -23,3 +23,15 @@ class TestIntegrate(object):
         torch.testing.assert_allclose(
             integrate(_function, d, continuous_samples=100), 0.4, rtol=1e-3, atol=1e-3
         )
+
+    def test_batched(self):
+        batch_size = 10
+        probs = torch.rand((batch_size, 3))
+        probs /= torch.sum(probs, dim=1, keepdim=True)
+        d = Categorical(probs)
+
+        def _function(a):
+            return 2 * a
+
+        result = integrate(_function, d, continuous_samples=100)
+        assert result.shape == torch.Size((batch_size,))

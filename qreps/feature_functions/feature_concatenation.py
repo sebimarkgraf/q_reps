@@ -26,7 +26,10 @@ class FeatureConcatenation(AbstractStateActionFeatureFunction):
             act_features = act_features.unsqueeze(0)
 
         if act_features.ndim < obs_features.ndim:
-            act_features = act_features.unsqueeze(1)
+            if obs_features.shape[0] == 1:
+                act_features = act_features.unsqueeze(0)
+            else:
+                act_features.unsqueeze(1)
 
         if obs_features.ndim < act_features.ndim:
             obs_features = obs_features.unsqueeze(1)

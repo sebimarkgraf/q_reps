@@ -6,8 +6,8 @@ def empirical_bellman_error(
 ):
     v_features = v_func(features_next)
     q_features = q_func(features, actions)
-    bellan = rewards + discount * v_features - q_features
-    return bellan
+    bellman = rewards + discount * v_features - q_features
+    return bellman
 
 
 def empirical_logistic_bellman(

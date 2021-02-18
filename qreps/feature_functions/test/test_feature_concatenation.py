@@ -22,7 +22,7 @@ class TestConcatenation(object):
         x = torch.tensor([0, 1, 2])
         a = torch.tensor(2)
         torch.testing.assert_allclose(
-            concatenator(x, a), torch.tensor([[0.0, 1.0, 2.0, 2.0]])
+            concatenator(x, a), torch.tensor([0.0, 1.0, 2.0, 2.0])
         )
 
         x = torch.tensor([0, 1, 2])
@@ -61,16 +61,3 @@ class TestConcatenation(object):
         a = torch.randint(high=2, size=(batch_size,))
         result = concatenator(x, a)
         assert result.shape == torch.Size((batch_size, 4 + 2))
-
-        concatenator = FeatureConcatenation(
-            obs_feature_fn=OneHotFeature(num_classes=3), act_feature_fn=iden_feature
-        )
-        x = torch.tensor([0, 1, 2])
-        a = torch.tensor([0, 1, 2])
-        result = concatenator(x, a)
-        assert torch.equal(
-            result,
-            torch.tensor(
-                [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 1.0], [0.0, 0.0, 1.0, 2.0]]
-            ),
-        )
