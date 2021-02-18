@@ -13,7 +13,7 @@ class IntegratedQFunction(AbstractValueFunction):
         *args,
         **kwargs
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(obs_dim=q_func.n_obs, *args, **kwargs)
         self.alpha = alpha
         self.policy = policy
         self.q_func = q_func

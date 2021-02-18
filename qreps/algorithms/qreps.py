@@ -1,10 +1,8 @@
 import logging
 import math
 from collections import Callable
-from typing import Union
 
 import dm_env
-import numpy as np
 import torch
 import torch.nn.functional as F
 from bsuite.baselines import base
@@ -12,9 +10,6 @@ from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.abstract_algorithm import AbstractAlgorithm
-from qreps.feature_functions.abstract_feature_function import (
-    AbstractStateActionFeatureFunction,
-)
 from qreps.memory.replay_buffer import ReplayBuffer
 from qreps.policies.stochasticpolicy import StochasticPolicy
 from qreps.utilities.elbe import empirical_bellman_error
@@ -30,8 +25,6 @@ class QREPS(AbstractAlgorithm):
 
     def __init__(
         self,
-        feature_fn: AbstractStateActionFeatureFunction,
-        feature_dim,
         q_function: SimpleQFunction,
         policy: StochasticPolicy,
         saddle_point_steps=300,
@@ -47,24 +40,22 @@ class QREPS(AbstractAlgorithm):
         super().__init__()
         self.buffer = ReplayBuffer(buffer_size)
         self.policy = policy
-        self.stochastic = True
         self.writer = writer
         self.saddle_point_steps = saddle_point_steps
         self.eta = eta
         self.q_function = q_function
         self.beta_2 = beta_2
         self.discount = discount
-        self.value_function = IntegratedQFunction(
-            self.policy, self.q_function, obs_dim=feature_dim
-        )
+        self.value_function = IntegratedQFunction(self.policy, self.q_function)
         self.theta_opt = learner(self.q_function.parameters(), lr=beta)
         self.pol_optimizer = torch.optim.Adam(self.policy.parameters(), lr=1e-2)
         self.optimize_policy = True
         self.alpha = alpha
-        self.feature_fn = feature_fn
 
     def g_hat(self, x_1, a_1, x, a):
-        return self.discount * self.feature_fn(x_1, a_1) - self.feature_fn(x, a)
+        return self.discount * self.q_function.features(
+            x_1, a_1
+        ) - self.q_function.features(x, a)
 
     def theta_policy(self, x):
         distribution = self.policy.distribution(x)
@@ -79,7 +70,7 @@ class QREPS(AbstractAlgorithm):
         actions = []
         values = []
         for action in distribution.enumerate_support():
-            q_values = func(action.view(1, -1))
+            q_values = func(action)
             log_probs = distribution.log_prob(action)
             value = q_values * torch.exp(log_probs.detach())
             values.append(value)
@@ -193,7 +184,7 @@ class QREPS(AbstractAlgorithm):
         if next_observations.ndim < 2:
             next_observations = next_observations.view(-1, 1)
         actions = actions.view(-1, 1)
-        rewards = self.get_rewards(rewards).view(-1, 1)
+        rewards = self.get_rewards(rewards)
         dist_before = self.policy.distribution(observations)
 
         qreps_loss = self.qreps_eval(observations, next_observations, actions, rewards)

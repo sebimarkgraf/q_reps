@@ -6,6 +6,7 @@ def empirical_bellman_error(
 ):
     v_features = v_func(features_next)
     q_features = q_func(features, actions)
+    assert v_features.shape == q_features.shape
     bellman = rewards + discount * v_features - q_features
     return bellman
 

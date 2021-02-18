@@ -42,8 +42,6 @@ value_function = SimpleQFunction(
 policy = StochasticTablePolicy(obs_num, act_num)
 
 agent = QREPS(
-    feature_fn=feature_fn,
-    feature_dim=obs_num + act_num,
     buffer_size=5000,
     writer=writer,
     policy=policy,
