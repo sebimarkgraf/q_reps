@@ -1,3 +1,6 @@
 venv/
 .idea
 experiments/runs
+
+__pycache__
+.pytest_cache
