@@ -7,8 +7,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.reps import REPS
 from qreps.policies.categorical_mlp import CategoricalMLP
-from qreps.trainer import Trainer
-from qreps.valuefunctions.value_functions import NNValueFunction, SimpleValueFunction
+from qreps.utilities.trainer import Trainer
+from qreps.valuefunctions.value_functions import NNValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)

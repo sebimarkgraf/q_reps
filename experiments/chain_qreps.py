@@ -1,7 +1,6 @@
 import logging
 
 import torch
-import torch.nn.functional as F
 from bsuite.utils import gym_wrapper
 from gym.envs.toy_text import NChainEnv
 from torch.utils.tensorboard import SummaryWriter
@@ -10,8 +9,8 @@ from qreps.algorithms.qreps import QREPS
 from qreps.feature_functions.feature_concatenation import FeatureConcatenation
 from qreps.feature_functions.one_hot import OneHotFeature
 from qreps.policies.stochastic_table import StochasticTablePolicy
-from qreps.trainer import Trainer
-from qreps.valuefunctions.q_function import NNQFunction
+from qreps.utilities.trainer import Trainer
+from qreps.valuefunctions.q_function import SimpleQFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -36,11 +35,8 @@ def pol_feature_fn(x):
     return x.long()
 
 
-value_function = NNQFunction(
-    obs_dim=obs_num,
-    act_dim=act_num,
-    feature_fn=feature_fn,
-    act_feature_fn=OneHotFeature(act_num),
+value_function = SimpleQFunction(
+    obs_dim=obs_num, act_dim=act_num, feature_fn=feature_fn,
 )
 
 policy = StochasticTablePolicy(obs_num, act_num)

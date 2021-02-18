@@ -1,15 +1,15 @@
 import logging
+import time
 
 import gym
 from bsuite.utils import gym_wrapper
-from dm_control.rl.control import Environment
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.reps import REPS
-from qreps.fourier_features import FourierFeatures
-from qreps.policies.policy import GaussianMLP
-from qreps.trainer import Trainer
-from qreps.valuefunctions.value_functions import SimpleValueFunction
+from qreps.policies.categorical_mlp import CategoricalMLP
+from qreps.policies.gaussian_mlp import GaussianMLPStochasticPolicy
+from qreps.utilities.trainer import Trainer
+from qreps.valuefunctions.value_functions import NNValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -17,36 +17,37 @@ for handler in logging.root.handlers[:]:
 FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-gym_env: Environment = gym.make("Pendulum-v0")
+
+timestamp = time.time()
+gym_env = gym.make("Pendulum-v0")
+# gym_env =  gym.wrappers.Monitor(gym_env, directory=f"./frozen_lake_{timestamp}")
 env = gym_wrapper.DMEnvFromGym(gym_env)
 print(env.observation_spec())
 print(env.action_spec())
 
+num_obs = env.observation_spec().shape[0]
 writer = SummaryWriter(comment="_pendulum_gym_reps")
-
-NUM_FEATURES = 75
-feature_fn = FourierFeatures(env.observation_spec().shape[0], NUM_FEATURES)
-policy = GaussianMLP(
-    NUM_FEATURES,
-    env.action_spec().shape[0],
-    action_min=env.action_spec().minimum[0],
-    action_max=env.action_spec().maximum[0],
-    feature_fn=feature_fn,
-)
+policy = GaussianMLPStochasticPolicy(num_obs, 1)
 
 agent = REPS(
-    buffer_size=2000,
-    batch_size=100,
+    buffer_size=5000,
+    batch_size=50,
     policy=policy,
+    value_function=NNValueFunction(obs_dim=num_obs),
+    gamma=1.0,
     writer=writer,
-    value_function=SimpleValueFunction(NUM_FEATURES, feature_fn=feature_fn),
+    eta=1.0,
+    entropy_constrained=True,
+    lr=5e-4,
+    dual_lr=5e-4,
 )
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(100, 200, number_rollouts=10)
+trainer.train(10, 200, number_rollouts=15)
 
 policy.set_eval_mode(True)
 
-val_rewards = trainer.validate(5, 2000)
+val_rewards = trainer.validate(5, 200)
+
 logging.info(f"Validation rewards: {val_rewards}")

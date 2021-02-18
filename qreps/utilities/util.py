@@ -22,7 +22,7 @@ def integrate_discrete(func, distribution: torch.distributions.Distribution):
     for action in distribution.enumerate_support():
         f_val = func(action)
         log_probs = distribution.log_prob(action)
-        values += f_val * torch.exp(log_probs.detach())
+        values = values + f_val * torch.exp(log_probs.detach())
     return values
 
 

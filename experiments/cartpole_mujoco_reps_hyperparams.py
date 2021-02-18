@@ -1,17 +1,14 @@
 import logging
 
 import torch
-import torch.nn.functional as F
-from dm_control import viewer
 from dm_control.rl.control import Environment
 from dm_control.suite.cartpole import balance
 from ray import tune
-from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.reps import REPS
-from qreps.observation_transform import OrderedDictFlattenTransform
 from qreps.policies.gaussian_mlp import GaussianMLPStochasticPolicy
-from qreps.trainer import Trainer
+from qreps.utilities.observation_transform import OrderedDictFlattenTransform
+from qreps.utilities.trainer import Trainer
 from qreps.valuefunctions.value_functions import NNValueFunction
 
 for handler in logging.root.handlers[:]:

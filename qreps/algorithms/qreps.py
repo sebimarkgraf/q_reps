@@ -6,22 +6,20 @@ from typing import Union
 import dm_env
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from bsuite.baselines import base
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.abstract_algorithm import AbstractAlgorithm
-from qreps.elbe import empirical_bellman_error
 from qreps.feature_functions.abstract_feature_function import (
     AbstractStateActionFeatureFunction,
 )
 from qreps.memory.replay_buffer import ReplayBuffer
 from qreps.policies.stochasticpolicy import StochasticPolicy
-from qreps.util import integrate, torch_batched
+from qreps.utilities.elbe import empirical_bellman_error
 from qreps.valuefunctions.integrated_q_function import IntegratedQFunction
-from qreps.valuefunctions.q_function import AbstractQFunction
+from qreps.valuefunctions.q_function import SimpleQFunction
 
 logger = logging.getLogger("reps")
 logger.addHandler(logging.NullHandler())
@@ -34,7 +32,7 @@ class QREPS(AbstractAlgorithm):
         self,
         feature_fn: AbstractStateActionFeatureFunction,
         feature_dim,
-        q_function: AbstractQFunction,
+        q_function: SimpleQFunction,
         policy: StochasticPolicy,
         saddle_point_steps=300,
         writer: SummaryWriter = None,
@@ -53,28 +51,17 @@ class QREPS(AbstractAlgorithm):
         self.writer = writer
         self.saddle_point_steps = saddle_point_steps
         self.eta = eta
-        # self.q_func = q_function
+        self.q_function = q_function
         self.beta_2 = beta_2
         self.discount = discount
-        self.theta = nn.Linear(feature_dim, 1, bias=False)
         self.value_function = IntegratedQFunction(
             self.policy, self.q_function, obs_dim=feature_dim
         )
-        self.theta_opt = learner(self.theta.parameters(), lr=beta)
+        self.theta_opt = learner(self.q_function.parameters(), lr=beta)
         self.pol_optimizer = torch.optim.Adam(self.policy.parameters(), lr=1e-2)
         self.optimize_policy = True
         self.alpha = alpha
         self.feature_fn = feature_fn
-
-    def q_function(self, features, actions):
-        feat = self.feature_fn(features, actions)
-        return self.theta(feat)
-
-    def select_action(self, timestep: dm_env.TimeStep) -> Union[int, np.array]:
-        """Selects actions using current policy in an on-policy setting"""
-        obs_feat = torch.tensor([timestep.observation]).float()
-        action = self.policy.sample(obs_feat)
-        return action
 
     def g_hat(self, x_1, a_1, x, a):
         return self.discount * self.feature_fn(x_1, a_1) - self.feature_fn(x, a)
@@ -112,8 +99,10 @@ class QREPS(AbstractAlgorithm):
 
         # Keep history of parameters for averaging
         # If changing to other functions than linear as features, this should be changes to take all parameters
-        theta_hist = torch.zeros((self.saddle_point_steps,) + self.theta.weight.size())
-        theta_hist[0] = self.theta.weight
+        theta_hist = torch.zeros(
+            (self.saddle_point_steps,) + self.q_function.model.weight.size()
+        )
+        theta_hist[0] = self.q_function.model.weight
 
         for tau in range(1, self.saddle_point_steps):
             # Learner
@@ -125,9 +114,9 @@ class QREPS(AbstractAlgorithm):
             x, a = features[sample_index].view(1, -1), actions[sample_index].view(1, -1)
             x1 = features_next[sample_index].view(1, -1)
             a1 = self.theta_policy(x1).view(1, -1)
-            self.theta.weight.backward(self.g_hat(x1, a1, x, a).squeeze(1))
+            self.q_function.model.weight.backward(self.g_hat(x1, a1, x, a).squeeze(1))
             self.theta_opt.step()
-            theta_hist[tau] = self.theta.weight
+            theta_hist[tau] = self.q_function.model.weight
 
             # Sampler
             with torch.no_grad():
@@ -159,7 +148,7 @@ class QREPS(AbstractAlgorithm):
 
         # Average over the weights
         with torch.no_grad():
-            self.theta.weight.data = torch.mean(theta_hist, 0)
+            self.q_function.model.weight.data = torch.mean(theta_hist, 0)
 
         return self.S_k(z[-1], N, features, features_next, actions, rewards)
 
@@ -199,12 +188,12 @@ class QREPS(AbstractAlgorithm):
             discounts,
             observations,
         ) = self.buffer.get_all()
-        if len(observations.shape) < 2:
+        if observations.ndim < 2:
             observations = observations.view(-1, 1)
-        if len(next_observations.shape) < 2:
+        if next_observations.ndim < 2:
             next_observations = next_observations.view(-1, 1)
         actions = actions.view(-1, 1)
-        rewards = self.get_rewards(rewards)
+        rewards = self.get_rewards(rewards).view(-1, 1)
         dist_before = self.policy.distribution(observations)
 
         qreps_loss = self.qreps_eval(observations, next_observations, actions, rewards)

@@ -86,17 +86,6 @@ class REPS(AbstractAlgorithm):
 
         return dual.mean(0)
 
-    def select_action(self, timestep: dm_env.TimeStep) -> Union[int, np.array]:
-        """
-        Selects actions using current policy in an on-policy setting.
-
-        @param timestep: the current timestep containg the observation
-        @return: An action confirming to the dm_control numpy or int convention
-        """
-        obs_feat = torch.tensor(timestep.observation).float()
-        action = self.policy.sample(obs_feat)
-        return action
-
     def optimize_loss(
         self, loss_fn: Callable, optimizer: torch.optim.Optimizer, optimizer_steps=300
     ):

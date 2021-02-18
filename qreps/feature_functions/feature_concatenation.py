@@ -25,11 +25,6 @@ class FeatureConcatenation(AbstractStateActionFeatureFunction):
         if act_features.ndim == 0:
             act_features = act_features.unsqueeze(0)
 
-        if act_features.shape[0] != obs_features.shape[0]:
-            # First dimension is not batch_dim
-            act_features = act_features.unsqueeze(0)
-            obs_features = obs_features.unsqueeze(0)
-
         if act_features.ndim < obs_features.ndim:
             act_features = act_features.unsqueeze(1)
 

@@ -1,5 +1,3 @@
-import logging
-
 import torch
 import torch.nn.functional as F
 from bsuite.utils import gym_wrapper
@@ -8,7 +6,7 @@ from ray import tune
 
 from qreps.algorithms.reps import REPS
 from qreps.policies.stochastic_table import StochasticTablePolicy
-from qreps.trainer import Trainer
+from qreps.utilities.trainer import Trainer
 from qreps.valuefunctions.value_functions import SimpleValueFunction
 
 gym_env = NChainEnv(n=5, slip=0.2, small=0.1)

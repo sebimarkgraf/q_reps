@@ -1,15 +1,14 @@
 import logging
 
-import nlopt
 from bsuite.baselines.experiment import run
 from dm_control import suite, viewer
 from dm_control.rl.control import Environment
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.reps import REPS
-from qreps.fourier_features import FourierFeatures
-from qreps.observation_transform import OrderedDictFlattenTransform
+from qreps.feature_functions.fourier_features import FourierFeatures
 from qreps.policies.gaussian_mlp import GaussianMLPStochasticPolicy
+from qreps.utilities.observation_transform import OrderedDictFlattenTransform
 from qreps.valuefunctions.value_functions import NNValueFunction
 
 for handler in logging.root.handlers[:]:

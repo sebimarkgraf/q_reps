@@ -2,7 +2,7 @@ import math
 
 import torch
 
-from qreps.util import to_torch
+from qreps.utilities.util import to_torch
 
 
 class FourierFeatures(torch.nn.Module):

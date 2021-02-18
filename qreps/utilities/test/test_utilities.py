@@ -1,9 +1,8 @@
-import pytest
 import torch
 import torch.testing
 from torch.distributions import Categorical, MultivariateNormal
 
-from qreps.util import integrate
+from qreps.utilities.util import integrate
 
 
 class TestIntegrate(object):

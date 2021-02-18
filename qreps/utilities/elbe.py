@@ -4,7 +4,10 @@ import torch
 def empirical_bellman_error(
     features, features_next, actions, rewards, q_func, v_func, discount
 ):
-    return rewards + discount * v_func(features_next) - q_func(features, actions)
+    v_features = v_func(features_next)
+    q_features = q_func(features, actions)
+    bellan = rewards + discount * v_features - q_features
+    return bellan
 
 
 def empirical_logistic_bellman(

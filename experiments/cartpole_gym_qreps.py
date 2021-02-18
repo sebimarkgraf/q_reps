@@ -2,26 +2,22 @@ import logging
 import time
 
 import gym
-import torch
-import torch.nn.functional as F
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.qreps import QREPS
-from qreps.algorithms.reps import REPS
 from qreps.feature_functions.feature_concatenation import FeatureConcatenation
 from qreps.feature_functions.identity import IdentityFeature
 from qreps.feature_functions.one_hot import OneHotFeature
 from qreps.policies.categorical_mlp import CategoricalMLP
-from qreps.trainer import Trainer
-from qreps.valuefunctions.value_functions import SimpleValueFunction
+from qreps.utilities.trainer import Trainer
+from qreps.valuefunctions.q_function import SimpleQFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
 
 FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
-
 
 timestamp = time.time()
 gym_env = gym.make("CartPole-v0")
@@ -38,6 +34,7 @@ policy = CategoricalMLP(num_obs, 2)
 feature_fn = FeatureConcatenation(
     obs_feature_fn=IdentityFeature(), act_feature_fn=OneHotFeature(num_classes=num_act)
 )
+q_function = SimpleQFunction(obs_dim=num_obs, act_dim=num_act, feature_fn=feature_fn)
 
 agent = QREPS(
     feature_fn=feature_fn,
@@ -50,7 +47,7 @@ agent = QREPS(
     beta=0.08,
     beta_2=0.1,
     discount=0.99,
-    q_function=None,
+    q_function=q_function,
 )
 
 trainer = Trainer()
@@ -71,6 +68,5 @@ while not timestep.last():
     new_timestep = env.step(action)
     # Book-keeping.
     timestep = new_timestep
-
 
 logging.info(f"Validation rewards: {val_rewards}")

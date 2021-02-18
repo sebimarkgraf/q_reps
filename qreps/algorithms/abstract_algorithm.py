@@ -1,5 +1,8 @@
 from abc import ABCMeta
+from typing import Union
 
+import dm_env
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
@@ -34,6 +37,17 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
             return self.reward_transformer(rewards)
         else:
             return rewards
+
+    def select_action(self, timestep: dm_env.TimeStep) -> Union[int, np.array]:
+        """
+        Selects actions using current policy in an on-policy setting.
+
+        @param timestep: the current timestep containg the observation
+        @return: An action confirming to the dm_control numpy or int convention
+        """
+        obs_feat = torch.tensor([timestep.observation]).float()
+        action = self.policy.sample(obs_feat)
+        return action
 
     def report_tensorboard(
         self,

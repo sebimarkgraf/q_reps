@@ -1,7 +1,5 @@
-import torch
-
 from qreps.policies.stochasticpolicy import StochasticPolicy
-from qreps.util import integrate, torch_batched
+from qreps.utilities.util import integrate
 from qreps.valuefunctions.q_function import AbstractQFunction
 from qreps.valuefunctions.value_functions import AbstractValueFunction
 
