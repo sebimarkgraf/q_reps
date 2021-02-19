@@ -21,8 +21,11 @@ def integrate_discrete(func, distribution: torch.distributions.Distribution):
     values = torch.zeros(distribution.batch_shape)
     for action in distribution.enumerate_support():
         f_val = func(action)
+        assert f_val.ndim <= values.ndim
+        if f_val.ndim < values.ndim:
+            f_val = f_val.unsqueeze(-1)
         log_probs = distribution.log_prob(action)
-        values = values + f_val * torch.exp(log_probs.detach())
+        values += f_val * torch.exp(log_probs.detach())
     return values
 
 
