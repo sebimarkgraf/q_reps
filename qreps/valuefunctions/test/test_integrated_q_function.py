@@ -41,7 +41,7 @@ class TestIntegratedQFunction(object):
         )
         self.policy = CategoricalMLP(obs_shape=obs_dim, act_shape=act_dim)
         self.value_function = IntegratedQFunction(
-            obs_dim=obs_dim, q_func=self.q_function, policy=self.policy
+            q_func=self.q_function, policy=self.policy
         )
 
     def test_creation(self, obs_dim, act_dim, batch_size):
