@@ -1,8 +1,17 @@
 import torch
 
+from qreps.valuefunctions.q_function import AbstractQFunction
+from qreps.valuefunctions.value_functions import AbstractValueFunction
+
 
 def empirical_bellman_error(
-    features, features_next, actions, rewards, q_func, v_func, discount
+    features,
+    features_next,
+    actions,
+    rewards,
+    q_func: AbstractQFunction,
+    v_func: AbstractValueFunction,
+    discount,
 ):
     v_features = v_func(features_next)
     q_features = q_func(features, actions)

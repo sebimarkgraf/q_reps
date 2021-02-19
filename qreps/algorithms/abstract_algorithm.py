@@ -14,7 +14,11 @@ DEFAULT_REPLAY_BUFFER_SIZE = 100000
 
 class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
     def __init__(
-        self, writer: SummaryWriter = None, buffer=None, reward_transformer=None
+        self,
+        writer: SummaryWriter = None,
+        buffer=None,
+        reward_transformer=None,
+        discount=1.0,
     ):
         super().__init__()
         self.writer = writer
@@ -24,6 +28,7 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
             self.buffer = buffer
 
         self.reward_transformer = reward_transformer
+        self.discount = discount
 
     def get_rewards(self, rewards):
         """

@@ -2,10 +2,12 @@ import logging
 import time
 
 import gym
+import torch
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.qreps import QREPS
+from qreps.algorithms.sampler.best_response import BestResponseSampler
 from qreps.feature_functions.feature_concatenation import FeatureConcatenation
 from qreps.feature_functions.identity import IdentityFeature
 from qreps.feature_functions.nn_features import NNFeatures
@@ -32,19 +34,24 @@ num_act = env.action_spec().num_values
 writer = SummaryWriter(comment="_cartpole_gym_qreps")
 policy = CategoricalMLP(num_obs, 2)
 
-feature_fn = NNFeatures(num_act, num_obs)
-q_function = SimpleQFunction(obs_dim=199, act_dim=1, feature_fn=feature_fn)
+
+feature_fn = FeatureConcatenation(
+    obs_feature_fn=NNFeatures(num_obs, feat_dim=200),
+    act_feature_fn=OneHotFeature(num_classes=num_act),
+)
+
+q_function = SimpleQFunction(obs_dim=200, act_dim=num_act, feature_fn=feature_fn)
 
 agent = QREPS(
     buffer_size=5000,
     writer=writer,
     policy=policy,
     eta=0.01,
-    alpha=0.01,
     beta=0.08,
-    beta_2=0.1,
     discount=0.99,
     q_function=q_function,
+    learner=torch.optim.Adam,
+    sampler=BestResponseSampler,
 )
 
 trainer = Trainer()

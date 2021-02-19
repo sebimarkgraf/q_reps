@@ -47,7 +47,6 @@ agent = QREPS(
     policy=policy,
     q_function=value_function,
     eta=5.0,
-    alpha=5.0,
     beta=0.05,
     learner=torch.optim.SGD,
     saddle_point_steps=300,

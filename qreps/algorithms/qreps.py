@@ -4,12 +4,12 @@ from collections import Callable
 
 import dm_env
 import torch
-import torch.nn.functional as F
 from bsuite.baselines import base
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.abstract_algorithm import AbstractAlgorithm
+from qreps.algorithms.sampler.exponentited_gradient import ExponentitedGradientSampler
 from qreps.memory.replay_buffer import ReplayBuffer
 from qreps.policies.stochasticpolicy import StochasticPolicy
 from qreps.utilities.elbe import empirical_bellman_error
@@ -28,29 +28,30 @@ class QREPS(AbstractAlgorithm):
         q_function: SimpleQFunction,
         policy: StochasticPolicy,
         saddle_point_steps=300,
-        writer: SummaryWriter = None,
-        discount=1.0,
         beta=0.1,
-        beta_2=0.1,
         eta=0.5,
-        alpha=0.5,
         learner=torch.optim.SGD,
         buffer_size=10000,
+        sampler=ExponentitedGradientSampler,
+        sampler_args={},
+        *args,
+        **kwargs,
     ):
-        super().__init__()
+        super().__init__(*args, **kwargs)
         self.buffer = ReplayBuffer(buffer_size)
         self.policy = policy
-        self.writer = writer
         self.saddle_point_steps = saddle_point_steps
         self.eta = eta
         self.q_function = q_function
-        self.beta_2 = beta_2
-        self.discount = discount
         self.value_function = IntegratedQFunction(self.policy, self.q_function)
         self.theta_opt = learner(self.q_function.parameters(), lr=beta)
         self.pol_optimizer = torch.optim.Adam(self.policy.parameters(), lr=1e-2)
         self.optimize_policy = True
-        self.alpha = alpha
+        self.sampler = sampler
+        self.sampler_args = sampler_args
+
+        # Setting alpha to eta, as mentioned in Paper page 19
+        self.alpha = eta
 
     def g_hat(self, x_1, a_1, x, a):
         return self.discount * self.q_function.features(
@@ -83,10 +84,10 @@ class QREPS(AbstractAlgorithm):
 
     def qreps_eval(self, features, features_next, actions, rewards):
         N = features.shape[0]
-        h = torch.ones((self.saddle_point_steps, N))
         # Initialize z as uniform distribution over all samples
-        z = torch.ones((self.saddle_point_steps, N))
-        z[0] = z[0] / torch.sum(z[0])
+        z = torch.ones((N,))
+        z = z / torch.sum(z)
+        sampler = self.sampler(length=N, eta=self.eta, **self.sampler_args)
 
         # Keep history of parameters for averaging
         # If changing to other functions than linear as features, this should be changes to take all parameters
@@ -98,9 +99,7 @@ class QREPS(AbstractAlgorithm):
         for tau in range(1, self.saddle_point_steps):
             # Learner
             self.theta_opt.zero_grad()
-            # s_loss = self.S_k(z[tau - 1].detach(), N, features, features_next, actions, rewards)
-            # s_loss.backward()
-            z_dist = torch.distributions.Categorical(z[tau])
+            z_dist = torch.distributions.Categorical(z)
             sample_index = z_dist.sample((1,)).item()
             x, a = features[sample_index].view(1, -1), actions[sample_index].view(1, -1)
             x1 = features_next[sample_index].view(1, -1)
@@ -111,9 +110,6 @@ class QREPS(AbstractAlgorithm):
 
             # Sampler
             with torch.no_grad():
-                z[tau] = z[tau - 1] * torch.exp(self.beta_2 * h[tau - 1])
-                z[tau] = F.softmax(z[tau], dim=0)
-
                 bellman = empirical_bellman_error(
                     features,
                     features_next,
@@ -123,16 +119,11 @@ class QREPS(AbstractAlgorithm):
                     self.value_function,
                     self.discount,
                 )
-                h[tau] = bellman.squeeze() - torch.log(N * z[tau]) / self.eta
-            if (
-                torch.isnan(z[tau]).any()
-                or torch.isnan(h[tau]).any()
-                or torch.isnan(bellman).any()
-            ):
+                z = sampler.get_next_distribution(bellman)
+            if torch.isnan(z).any() or torch.isnan(bellman).any():
                 print(
                     f"In Iteration {tau} contains NaN:\n"
-                    f"Z: {torch.isnan(z[tau]).any()}, "
-                    f"h: {torch.isnan(h[tau]).any()}, "
+                    f"Z: {torch.isnan(z).any()}, "
                     f"bellman: {torch.isnan(bellman).any()} "
                 )
                 raise RuntimeError("Ran into nan")
@@ -141,7 +132,7 @@ class QREPS(AbstractAlgorithm):
         with torch.no_grad():
             self.q_function.model.weight.data = torch.mean(theta_hist, 0)
 
-        return self.S_k(z[-1], N, features, features_next, actions, rewards)
+        return self.S_k(z, N, features, features_next, actions, rewards)
 
     def S_k(self, z, N, features, features_next, actions, rewards):
         bellman_error = empirical_bellman_error(

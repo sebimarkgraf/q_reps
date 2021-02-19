@@ -24,4 +24,4 @@ class IntegratedQFunction(AbstractValueFunction):
 
         distribution = self.policy.distribution(obs)
         values = integrate(q_for_obs, distribution)
-        return values
+        return values.squeeze(-1)
