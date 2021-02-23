@@ -6,6 +6,7 @@ from gym.envs.toy_text import NChainEnv
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.qreps import QREPS
+from qreps.algorithms.sampler.best_response import BestResponseSampler
 from qreps.feature_functions.feature_concatenation import FeatureConcatenation
 from qreps.feature_functions.one_hot import OneHotFeature
 from qreps.policies.stochastic_table import StochasticTablePolicy
@@ -19,7 +20,7 @@ FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
-gym_env = NChainEnv(n=5, slip=0, small=0.01, large=1.0)
+gym_env = NChainEnv(n=5, slip=0.2, small=0.01, large=10.0)
 env = gym_wrapper.DMEnvFromGym(gym_env)
 obs_num = env.observation_spec().num_values
 act_num = env.action_spec().num_values
@@ -45,7 +46,7 @@ agent = QREPS(
     writer=writer,
     policy=policy,
     q_function=value_function,
-    eta=1.0,
+    eta=5.0,
     beta=0.05,
     learner=torch.optim.SGD,
     saddle_point_steps=300,
@@ -54,7 +55,7 @@ agent = QREPS(
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(num_iterations=10, max_steps=30, number_rollouts=10)
+trainer.train(num_iterations=10, max_steps=30, number_rollouts=5)
 policy.set_eval_mode(True)
 
 val_reward = trainer.validate(5, 100)

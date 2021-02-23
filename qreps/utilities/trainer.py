@@ -1,5 +1,5 @@
 import numpy as np
-from dm_env import Environment, transition, truncation
+from dm_env import Environment, truncation
 
 
 class Trainer:

@@ -1,6 +1,5 @@
 import logging
 import math
-from collections import Callable
 
 import torch
 from torch import Tensor
@@ -12,12 +11,36 @@ from qreps.utilities.elbe import empirical_bellman_error, empirical_logistic_bel
 from qreps.valuefunctions.integrated_q_function import IntegratedQFunction
 from qreps.valuefunctions.q_function import SimpleQFunction
 
-logger = logging.getLogger("reps")
+logger = logging.getLogger("qreps")
 logger.addHandler(logging.NullHandler())
 
 
 class QREPS(AbstractAlgorithm):
-    """Feed-forward actor-critic agent."""
+    r"""Logistic Q-Learning Algorithm.
+
+        Logistic Q-Learning optimizes a linear program of the optimal policy but uses p = d as trick to naturally
+        introduce Q-functions.
+        The following linear program is optimized:
+        math:: \mathrm{maximize} \langle p, r \rangle - \frac{1}{\eta} D(p || p_0)  - \frac{1}{\alpha} H(d || d_0)
+        math:: \text{s.t. }E^T d = \gamma P^T p + ( 1 - \gamma) \vu_0
+        math:: \phi^T d = \phi^T p
+
+        Through the dual we naturally introduce Q and V functions.
+        The paper shows that the optimal solution for theses solves the linear program as well.
+
+        We can get the optimal solution V and Q, by minimizing empirical logistic bellman error (ELBE)
+        math:: \hat G (\theta) = \frac{1}{\eta} \log \left(\frac{1}{N}
+            \sum_{n=1}^N e^{\eta \hat \nabla_\theta (\xi_{k,n} }\right) + (1 - \gamma) \langle \vu_0 , V_\theta \rangle
+
+        This algorithm implement the version proposed in the paper as MinMaxQREPS.
+        Therefore, this uses a mirror descent algorithm formulated as sampler and learner.
+
+        References
+        ----------
+        [1] J. Bas-Serrano, S. Curi, A. Krause, and G. Neu, “Logistic $Q$-Learning,”
+        arXiv:2010.11151 [cs, stat], Oct. 2020, Accessed: Nov. 11, 2020. [Online].
+        Available: http://arxiv.org/abs/2010.11151.
+        """
 
     def __init__(
         self,
@@ -28,10 +51,24 @@ class QREPS(AbstractAlgorithm):
         eta=0.5,
         learner=torch.optim.SGD,
         sampler=ExponentitedGradientSampler,
-        sampler_args={},
+        sampler_args=None,
         *args,
         **kwargs,
     ):
+        """
+        This creates an QREPS algorithm instance.
+
+        @param q_function: The q_function that should be used. Currently only the SimpleQFunction is supported.
+        @param policy: The policy that is used for the problem and should be optimized. Only discrete policies currently
+        @param saddle_point_steps: How many optimization steps should be done for the learner/sampler optimization.
+        @param beta: Learning rate for the q_function parameters.
+        @param eta: The entropy regularization parameter.
+        @param learner: Which learner should be used. The default recommendations are SGD and Adam.
+        @param sampler: Which sampler to use. This is highly problem dependent.
+        @param sampler_args: Args that should be provided when creating the sampler.
+        @param args: arguments for the abstract algorithm.
+        @param kwargs: keyword arguments for the abstract algorithm.
+        """
         super().__init__(*args, **kwargs)
         self.policy = policy
         self.saddle_point_steps = saddle_point_steps
@@ -81,7 +118,8 @@ class QREPS(AbstractAlgorithm):
     def qreps_eval(self, features, features_next, actions, rewards, iteration):
         N = features.shape[0]
         # Initialize z as uniform distribution over all samples
-        sampler = self.sampler(length=N, eta=self.eta, **self.sampler_args)
+        sampler_args = self.sampler_args if self.sampler_args is not None else {}
+        sampler = self.sampler(length=N, eta=self.eta, **sampler_args)
         z_dist = sampler.get_distribution()
 
         # Keep history of parameters for averaging
@@ -168,13 +206,13 @@ class QREPS(AbstractAlgorithm):
         """
         Calculate the weights from the advantage for updating the policy
 
+        @param actions: the taken actions
         @param features: batched features for the states [N, feature_dim]
         @param features_next: batches features for the following states (e.g. features[1:]) [N, feature_dim]
         @param rewards: undiscounted rewards received in the states [N]
         @return: Tuple of the weights, calculated advantages
         """
-        advantages = self.alpha * self.q_function(features, actions)
-        return advantages
+        return self.alpha * self.q_function(features, actions)
 
     def update_policy(self, iteration):
         (
@@ -184,11 +222,7 @@ class QREPS(AbstractAlgorithm):
             discounts,
             observations,
         ) = self.buffer.get_all()
-        if observations.ndim < 2:
-            observations = observations.view(-1, 1)
-        if next_observations.ndim < 2:
-            next_observations = next_observations.view(-1, 1)
-        actions = actions.view(-1, 1)
+
         rewards = self.get_rewards(rewards)
         dist_before = self.policy.distribution(observations)
 
@@ -203,16 +237,6 @@ class QREPS(AbstractAlgorithm):
 
         self.buffer.reset()
 
-        elbe_loss = empirical_logistic_bellman(
-            self.eta,
-            observations,
-            next_observations,
-            actions,
-            rewards,
-            self.q_function,
-            self.value_function,
-            self.discount,
-        )
         dist_after = self.policy.distribution(observations)
         self.report_tensorboard(
             observations,
@@ -224,42 +248,7 @@ class QREPS(AbstractAlgorithm):
             iteration,
         )
         if self.writer is not None:
-            self.writer.add_scalar("train/elbe_loss", elbe_loss, iteration)
             self.writer.add_scalar("train/qreps_loss", qreps_loss, iteration)
-
-    def optimize_loss(
-        self, loss_fn: Callable, optimizer: torch.optim.Optimizer, optimizer_steps=300
-    ):
-        """
-        Optimize the specified loss using batch gradient descent.
-
-        Allows to specify an optimizer and is compatible with L-BFGS, Adam and SGD.
-
-        @param loss_fn: the loss function which should be minimized.
-        @param optimizer: the torch optimizer to use
-        @param optimizer_steps: how many steps to do the optimization
-        """
-        (
-            next_observations,
-            actions,
-            rewards,
-            discounts,
-            observations,
-        ) = self.buffer.get_all()
-        actions = actions
-        rewards = self.get_rewards(rewards)
-
-        # This is implemented using a closure mainly due to the potential usage of BFGS
-        # BFGS needs to evaluate the function multiple times and therefore needs a defined closure
-        # All other optimizers handle the closure just fine as well, but only execute it once
-        def closure():
-            optimizer.zero_grad()
-            loss = loss_fn(observations, next_observations, rewards, actions)
-            loss.backward()
-            return loss
-
-        for i in range(optimizer_steps):
-            optimizer.step(closure)
 
     def nll_loss(self, observations, next_observations, rewards, actions):
         weights = self.calc_weights(observations, next_observations, rewards, actions)

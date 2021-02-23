@@ -17,6 +17,10 @@ logger.addHandler(logging.NullHandler())
 
 
 class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
+    """
+    Abstract Algorithm provides general properties and configurations which are useful for all algorithms.
+    """
+
     def __init__(
         self,
         writer: SummaryWriter = None,
@@ -118,6 +122,7 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
             discounts,
             observations,
         ) = self.buffer.get_all()
+        rewards = self.get_rewards(rewards)
 
         # This is implemented using a closure mainly due to the potential usage of BFGS
         # BFGS needs to evaluate the function multiple times and therefore needs a defined closure

@@ -55,7 +55,7 @@ agent = QREPS(
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(100, 200, number_rollouts=15)
+trainer.train(100, 200, number_rollouts=5)
 
 policy.set_eval_mode(True)
 

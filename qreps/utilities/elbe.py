@@ -1,7 +1,4 @@
-import math
-
-import torch
-
+from qreps.utilities.math import logmeanexp
 from qreps.valuefunctions.q_function import AbstractQFunction
 from qreps.valuefunctions.value_functions import AbstractValueFunction
 
@@ -23,13 +20,7 @@ def empirical_bellman_error(
 def empirical_logistic_bellman(
     eta, features, features_next, actions, rewards, q_func, v_func, discount
 ):
-    N = features.shape[0]
-    exponents = torch.logsumexp(
-        eta
-        * empirical_bellman_error(
-            features, features_next, actions, rewards, q_func, v_func, discount
-        )
-        + math.log(1 / N),
-        0,
+    errors = empirical_bellman_error(
+        features, features_next, actions, rewards, q_func, v_func, discount
     )
-    return 1 / eta * exponents
+    return 1 / eta * logmeanexp(eta * errors, dim=0)
