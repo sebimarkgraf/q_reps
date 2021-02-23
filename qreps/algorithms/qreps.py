@@ -31,21 +31,21 @@ class QREPS(AbstractAlgorithm):
         beta=0.1,
         eta=0.5,
         learner=torch.optim.SGD,
-        buffer_size=10000,
         sampler=ExponentitedGradientSampler,
         sampler_args={},
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self.buffer = ReplayBuffer(buffer_size)
         self.policy = policy
         self.saddle_point_steps = saddle_point_steps
         self.eta = eta
         self.q_function = q_function
         self.value_function = IntegratedQFunction(self.policy, self.q_function)
         self.theta_opt = learner(self.q_function.parameters(), lr=beta)
-        self.pol_optimizer = torch.optim.Adam(self.policy.parameters(), lr=1e-2)
+        self.pol_optimizer = torch.optim.Adam(
+            self.policy.parameters(), lr=self.policy_lr
+        )
         self.optimize_policy = True
         self.sampler = sampler
         self.sampler_args = sampler_args
@@ -181,7 +181,9 @@ class QREPS(AbstractAlgorithm):
         qreps_loss = self.qreps_eval(observations, next_observations, actions, rewards)
 
         if self.optimize_policy is True:
-            self.optimize_loss(self.nll_loss, self.pol_optimizer)
+            self.optimize_loss(
+                self.nll_loss, self.pol_optimizer, optimizer_steps=self.policy_opt_steps
+            )
 
         self.buffer.reset()
 
@@ -216,7 +218,7 @@ class QREPS(AbstractAlgorithm):
             self.writer.add_scalar("train/qreps_loss", qreps_loss, iteration)
 
     def optimize_loss(
-        self, loss_fn: Callable, optimizer: torch.optim.Optimizer, optimizer_steps=50
+        self, loss_fn: Callable, optimizer: torch.optim.Optimizer, optimizer_steps=300
     ):
         """
         Optimize the specified loss using batch gradient descent.
@@ -258,15 +260,3 @@ class QREPS(AbstractAlgorithm):
         log_likes = self.policy.log_likelihood(observations, actions)
         nll = weights.detach() * log_likes
         return -torch.mean(torch.clamp_max(nll, 1e-3))
-
-    def update(
-        self,
-        timestep: dm_env.TimeStep,
-        action: base.Action,
-        new_timestep: dm_env.TimeStep,
-    ):
-        """Sampling: Obtain N samples (s_i, a_i, s_i', r_i)
-
-        Currently done using the Agent interface of DM.
-        """
-        self.buffer.push(timestep, action, new_timestep)

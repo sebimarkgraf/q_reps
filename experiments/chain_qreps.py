@@ -42,7 +42,6 @@ value_function = SimpleQFunction(
 policy = StochasticTablePolicy(obs_num, act_num)
 
 agent = QREPS(
-    buffer_size=5000,
     writer=writer,
     policy=policy,
     q_function=value_function,
@@ -54,7 +53,7 @@ agent = QREPS(
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(num_iterations=10, max_steps=30, number_rollouts=10)
+trainer.train(num_iterations=50, max_steps=30, number_rollouts=10)
 policy.set_eval_mode(True)
 
 val_reward = trainer.validate(5, 100)

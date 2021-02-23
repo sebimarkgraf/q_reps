@@ -13,6 +13,7 @@ from qreps.algorithms.abstract_algorithm import AbstractAlgorithm
 from qreps.memory.replay_buffer import ReplayBuffer
 from qreps.policies.direct_set_policy import DirectSetPolicy
 from qreps.policies.stochasticpolicy import StochasticPolicy
+from qreps.valuefunctions.value_functions import AbstractValueFunction
 
 logger = logging.getLogger("reps")
 logger.addHandler(logging.NullHandler())
@@ -23,14 +24,10 @@ class REPS(AbstractAlgorithm):
 
     def __init__(
         self,
-        buffer_size: int,
         policy: StochasticPolicy,
-        value_function,
+        value_function: AbstractValueFunction,
         dual_opt_steps=150,
-        pol_opt_steps=150,
         batch_size=1000,
-        gamma=1.0,
-        lr=1e-3,
         optimizer=torch.optim.Adam,
         optimize_policy=True,
         entropy_constrained=True,
@@ -54,14 +51,12 @@ class REPS(AbstractAlgorithm):
 
         self.value_function = value_function
         self.dual_opt_steps = dual_opt_steps
-        self.gamma = gamma
 
         # Policy Setup
         self.policy = policy
-        self.pol_opt_steps = pol_opt_steps
 
         self.batch_size = batch_size
-        self.pol_optimizer = optimizer(self.policy.parameters(), lr=lr)
+        self.pol_optimizer = optimizer(self.policy.parameters(), lr=self.policy_lr)
         self.dual_optimizer = dual_optimizer(
             self.value_function.parameters(), lr=dual_lr
         )
@@ -82,7 +77,7 @@ class REPS(AbstractAlgorithm):
         value = self.value_function(features)
         weights = self.calc_weights(features, features_next, rewards)
         normalizer = torch.logsumexp(weights, dim=0)
-        dual = self.eta() * (self.epsilon + normalizer) + (1.0 - self.gamma) * value
+        dual = self.eta() * (self.epsilon + normalizer) + (1.0 - self.discount) * value
 
         return dual.mean(0)
 
@@ -130,7 +125,7 @@ class REPS(AbstractAlgorithm):
         """
         value = self.value_function(features)
         value_next = self.value_function(features_next)
-        value_target = rewards + self.gamma * value_next
+        value_target = rewards + self.discount * value_next
         return value_target - value
 
     def eta(self):
@@ -177,7 +172,9 @@ class REPS(AbstractAlgorithm):
             )
 
         if self.optimize_policy is True:
-            self.optimize_loss(self.nll_loss, self.pol_optimizer)
+            self.optimize_loss(
+                self.nll_loss, self.pol_optimizer, optimizer_steps=self.policy_opt_steps
+            )
 
         self.buffer.reset()
         dual_loss = self.dual(observations, next_observations, rewards, actions)
@@ -195,23 +192,8 @@ class REPS(AbstractAlgorithm):
         if self.writer is not None:
             self.writer.add_scalar("train/dual_loss", dual_loss, iteration)
 
-        logger.info(
-            f"Iteration {iteration} After, Sum reward: {torch.sum(rewards):.2f}, Dual Loss: {dual_loss.item():.2f}"
-        )
-
     def nll_loss(self, observations, next_observations, rewards, actions):
         weights = self.calc_weights(observations, next_observations, rewards)
         log_likes = self.policy.log_likelihood(observations, actions)
         nll = weights.detach() * log_likes
         return -torch.mean(torch.clamp_max(nll, 1e-3))
-
-    def update(
-        self,
-        timestep: dm_env.TimeStep,
-        action: base.Action,
-        new_timestep: dm_env.TimeStep,
-    ):
-        self.buffer.push(timestep, action, new_timestep)
-
-    def save(self, filename: str):
-        return torch.save(self, filename)

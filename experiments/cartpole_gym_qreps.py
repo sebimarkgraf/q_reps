@@ -43,7 +43,6 @@ feature_fn = FeatureConcatenation(
 q_function = SimpleQFunction(obs_dim=200, act_dim=num_act, feature_fn=feature_fn)
 
 agent = QREPS(
-    buffer_size=5000,
     writer=writer,
     policy=policy,
     eta=0.01,

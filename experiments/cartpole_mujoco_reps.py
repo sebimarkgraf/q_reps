@@ -44,12 +44,11 @@ def train(config: dict):
 
     agent = OrderedDictFlattenTransform(
         REPS(
-            buffer_size=50000,
             batch_size=500,
             policy=policy,
             value_function=value_function,
             entropy_constrained=False,
-            gamma=config["gamma"],
+            discount=config["gamma"],
             eta=config["eta"],
             dual_lr=config["dual_lr"],
             lr=config["lr"],

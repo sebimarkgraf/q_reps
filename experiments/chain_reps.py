@@ -32,10 +32,9 @@ def train(config: dict):
     policy = StochasticTablePolicy(obs_num, act_num)
 
     agent = REPS(
-        buffer_size=5000,
         policy=policy,
         value_function=value_function,
-        gamma=config["gamma"],
+        discount=config["gamma"],
         eta=config["eta"],
         dual_lr=config["dual_lr"],
         lr=config["lr"],

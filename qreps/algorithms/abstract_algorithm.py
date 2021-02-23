@@ -1,3 +1,4 @@
+import logging
 from abc import ABCMeta
 from typing import Union
 
@@ -11,6 +12,9 @@ from qreps.memory.replay_buffer import ReplayBuffer
 
 DEFAULT_REPLAY_BUFFER_SIZE = 100000
 
+logger = logging.getLogger("algorithm")
+logger.addHandler(logging.NullHandler())
+
 
 class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
     def __init__(
@@ -19,6 +23,8 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
         buffer=None,
         reward_transformer=None,
         discount=1.0,
+        policy_opt_steps=150,
+        policy_lr=1e-2,
     ):
         super().__init__()
         self.writer = writer
@@ -29,6 +35,8 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
 
         self.reward_transformer = reward_transformer
         self.discount = discount
+        self.policy_opt_steps = policy_opt_steps
+        self.policy_lr = policy_lr
 
     def get_rewards(self, rewards):
         """
@@ -68,7 +76,7 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
         kl_loss = torch.distributions.kl_divergence(dist_before, dist_after).mean(0)
         entropy = self.policy.distribution(observations).entropy().mean(0)
 
-        print(f"Iteration {iteration} done, " f"Reward {torch.sum(rewards)}")
+        logger.info(f"Iteration {iteration} done, " f"Reward {torch.sum(rewards)}")
 
         if self.writer is not None:
             self.writer.add_scalar("train/pol_loss", pol_loss, iteration)
@@ -76,3 +84,12 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
             self.writer.add_histogram("train/actions", actions, iteration)
             self.writer.add_scalar("train/kl_loss_mean", kl_loss, iteration)
             self.writer.add_scalar("train/entropy_mean", entropy, iteration)
+
+    def update(
+        self, timestep: dm_env.TimeStep, action, new_timestep: dm_env.TimeStep,
+    ):
+        """Sampling: Obtain N samples (s_i, a_i, s_i', r_i)
+
+        Currently done using the Agent interface of DM.
+        """
+        self.buffer.push(timestep, action, new_timestep)

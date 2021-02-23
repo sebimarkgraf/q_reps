@@ -28,12 +28,7 @@ feature_fn = FourierFeatures(3, 75)
 policy = GaussianMLPStochasticPolicy(75, 1, feature_fn=feature_fn)
 
 agent = OrderedDictFlattenTransform(
-    REPS(
-        buffer_size=10000,
-        value_function=NNValueFunction(3),
-        policy=policy,
-        writer=writer,
-    ),
+    REPS(value_function=NNValueFunction(3), policy=policy, writer=writer,),
     ["orientation", "velocity"],
 )
 

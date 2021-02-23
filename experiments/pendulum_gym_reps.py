@@ -30,11 +30,9 @@ writer = SummaryWriter(comment="_pendulum_gym_reps")
 policy = GaussianMLPStochasticPolicy(num_obs, 1)
 
 agent = REPS(
-    buffer_size=5000,
     batch_size=50,
     policy=policy,
     value_function=NNValueFunction(obs_dim=num_obs),
-    gamma=1.0,
     writer=writer,
     eta=1.0,
     entropy_constrained=True,
