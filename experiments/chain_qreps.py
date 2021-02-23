@@ -45,15 +45,16 @@ agent = QREPS(
     writer=writer,
     policy=policy,
     q_function=value_function,
-    eta=5.0,
+    eta=1.0,
     beta=0.05,
     learner=torch.optim.SGD,
     saddle_point_steps=300,
+    policy_opt_steps=300,
 )
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(num_iterations=50, max_steps=30, number_rollouts=10)
+trainer.train(num_iterations=10, max_steps=30, number_rollouts=10)
 policy.set_eval_mode(True)
 
 val_reward = trainer.validate(5, 100)

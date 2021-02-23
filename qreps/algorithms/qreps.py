@@ -2,17 +2,13 @@ import logging
 import math
 from collections import Callable
 
-import dm_env
 import torch
-from bsuite.baselines import base
 from torch import Tensor
-from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms.abstract_algorithm import AbstractAlgorithm
 from qreps.algorithms.sampler.exponentited_gradient import ExponentitedGradientSampler
-from qreps.memory.replay_buffer import ReplayBuffer
 from qreps.policies.stochasticpolicy import StochasticPolicy
-from qreps.utilities.elbe import empirical_bellman_error
+from qreps.utilities.elbe import empirical_bellman_error, empirical_logistic_bellman
 from qreps.valuefunctions.integrated_q_function import IntegratedQFunction
 from qreps.valuefunctions.q_function import SimpleQFunction
 
@@ -82,12 +78,11 @@ class QREPS(AbstractAlgorithm):
 
         return actions[sample]
 
-    def qreps_eval(self, features, features_next, actions, rewards):
+    def qreps_eval(self, features, features_next, actions, rewards, iteration):
         N = features.shape[0]
         # Initialize z as uniform distribution over all samples
-        z = torch.ones((N,))
-        z = z / torch.sum(z)
         sampler = self.sampler(length=N, eta=self.eta, **self.sampler_args)
+        z_dist = sampler.get_distribution()
 
         # Keep history of parameters for averaging
         # If changing to other functions than linear as features, this should be changes to take all parameters
@@ -99,12 +94,23 @@ class QREPS(AbstractAlgorithm):
         for tau in range(1, self.saddle_point_steps):
             # Learner
             self.theta_opt.zero_grad()
-            z_dist = torch.distributions.Categorical(z)
-            sample_index = z_dist.sample((1,)).item()
-            x, a = features[sample_index].view(1, -1), actions[sample_index].view(1, -1)
-            x1 = features_next[sample_index].view(1, -1)
-            a1 = self.theta_policy(x1).view(1, -1)
-            self.q_function.model.weight.backward(self.g_hat(x1, a1, x, a).squeeze(1))
+            grad = torch.zeros(self.q_function.model.weight.shape)
+            grad_samples = 1
+            for i in range(grad_samples):
+                sample_index = z_dist.sample((1,)).item()
+                x, a = (
+                    features[sample_index].view(1, -1),
+                    actions[sample_index].view(1, -1),
+                )
+                x1 = features_next[sample_index].view(1, -1)
+                a1 = self.theta_policy(x1).view(1, -1)
+                grad += self.g_hat(x1, a1, x, a)
+            grad /= grad_samples
+            self.q_function.model.weight.backward(grad)
+
+            # indicees = z_dist.sample((10,))
+            # loss = self.S_k(z_dist, N, features, features_next, actions, rewards)
+            # loss.backward()
             self.theta_opt.step()
             theta_hist[tau] = self.q_function.model.weight
 
@@ -119,20 +125,28 @@ class QREPS(AbstractAlgorithm):
                     self.value_function,
                     self.discount,
                 )
-                z = sampler.get_next_distribution(bellman)
-            if torch.isnan(z).any() or torch.isnan(bellman).any():
-                print(
-                    f"In Iteration {tau} contains NaN:\n"
-                    f"Z: {torch.isnan(z).any()}, "
-                    f"bellman: {torch.isnan(bellman).any()} "
-                )
-                raise RuntimeError("Ran into nan")
+                z_dist = sampler.get_next_distribution(bellman)
+
+            self.writer.add_scalar(
+                "train/opt_elbe",
+                empirical_logistic_bellman(
+                    self.eta,
+                    features,
+                    features_next,
+                    actions,
+                    rewards,
+                    self.q_function,
+                    self.value_function,
+                    self.discount,
+                ),
+                self.saddle_point_steps * iteration + tau,
+            )
 
         # Average over the weights
         with torch.no_grad():
             self.q_function.model.weight.data = torch.mean(theta_hist, 0)
 
-        return self.S_k(z, N, features, features_next, actions, rewards)
+        return self.S_k(z_dist, N, features, features_next, actions, rewards)
 
     def S_k(self, z, N, features, features_next, actions, rewards):
         bellman_error = empirical_bellman_error(
@@ -144,7 +158,7 @@ class QREPS(AbstractAlgorithm):
             self.value_function,
             discount=self.discount,
         )
-        loss = torch.sum(torch.exp(z) * (bellman_error - (math.log(N) + z) / self.eta))
+        loss = torch.sum(z.probs * (bellman_error - (math.log(N) + z.probs) / self.eta))
         # + (1 - self.discount) * self.value_function(features))
         return loss
 
@@ -178,7 +192,9 @@ class QREPS(AbstractAlgorithm):
         rewards = self.get_rewards(rewards)
         dist_before = self.policy.distribution(observations)
 
-        qreps_loss = self.qreps_eval(observations, next_observations, actions, rewards)
+        qreps_loss = self.qreps_eval(
+            observations, next_observations, actions, rewards, iteration
+        )
 
         if self.optimize_policy is True:
             self.optimize_loss(
@@ -187,21 +203,15 @@ class QREPS(AbstractAlgorithm):
 
         self.buffer.reset()
 
-        elbe_loss = (
-            1
-            / self.eta
-            * torch.logsumexp(
-                empirical_bellman_error(
-                    observations,
-                    next_observations,
-                    actions,
-                    rewards,
-                    self.q_function,
-                    self.value_function,
-                    self.discount,
-                ),
-                0,
-            )
+        elbe_loss = empirical_logistic_bellman(
+            self.eta,
+            observations,
+            next_observations,
+            actions,
+            rewards,
+            self.q_function,
+            self.value_function,
+            self.discount,
         )
         dist_after = self.policy.distribution(observations)
         self.report_tensorboard(
@@ -236,11 +246,7 @@ class QREPS(AbstractAlgorithm):
             discounts,
             observations,
         ) = self.buffer.get_all()
-        if len(observations.shape) < 2:
-            observations = observations.view(-1, 1)
-        if len(next_observations.shape) < 2:
-            next_observations = next_observations.view(-1, 1)
-        actions = actions.view(-1, 1)
+        actions = actions
         rewards = self.get_rewards(rewards)
 
         # This is implemented using a closure mainly due to the potential usage of BFGS

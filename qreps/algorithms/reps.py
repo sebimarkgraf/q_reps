@@ -81,38 +81,6 @@ class REPS(AbstractAlgorithm):
 
         return dual.mean(0)
 
-    def optimize_loss(
-        self, loss_fn: Callable, optimizer: torch.optim.Optimizer, optimizer_steps=300
-    ):
-        """
-        Optimize the specified loss using batch gradient descent.
-
-        Allows to specify an optimizer and is compatible with L-BFGS, Adam and SGD.
-
-        @param loss_fn: the loss function which should be minimized.
-        @param optimizer: the torch optimizer to use
-        @param optimizer_steps: how many steps to do the optimization
-        """
-        (
-            next_observations,
-            actions,
-            rewards,
-            discounts,
-            observations,
-        ) = self.buffer.get_all()
-
-        # This is implemented using a closure mainly due to the potential usage of BFGS
-        # BFGS needs to evaluate the function multiple times and therefore needs a defined closure
-        # All other optimizers handle the closure just fine as well, but only execute it once
-        def closure():
-            optimizer.zero_grad()
-            loss = loss_fn(observations, next_observations, rewards, actions)
-            loss.backward()
-            return loss
-
-        for i in range(optimizer_steps):
-            optimizer.step(closure)
-
     def bellman_error(self, features, features_next, rewards):
         """
         Calculates the bellman or TD-error as difference between current and next state.
