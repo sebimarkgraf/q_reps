@@ -5,11 +5,10 @@ import gym
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
 
-from qreps.algorithms.reps import REPS
-from qreps.policies.categorical_mlp import CategoricalMLP
-from qreps.policies.gaussian_mlp import GaussianMLPStochasticPolicy
+from qreps.algorithms import REPS
+from qreps.policies import GaussianMLPStochasticPolicy
 from qreps.utilities.trainer import Trainer
-from qreps.valuefunctions.value_functions import NNValueFunction
+from qreps.valuefunctions import NNValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -36,7 +35,7 @@ agent = REPS(
     writer=writer,
     eta=1.0,
     entropy_constrained=True,
-    lr=5e-4,
+    policy_lr=5e-4,
     dual_lr=5e-4,
 )
 

@@ -4,12 +4,12 @@ import math
 import torch
 from torch import Tensor
 
-from qreps.algorithms.abstract_algorithm import AbstractAlgorithm
-from qreps.algorithms.sampler.exponentited_gradient import ExponentitedGradientSampler
-from qreps.policies.stochasticpolicy import StochasticPolicy
+from qreps.algorithms.sampler import AbstractSampler, ExponentitedGradientSampler
+from qreps.policies import StochasticPolicy
 from qreps.utilities.elbe import empirical_bellman_error, empirical_logistic_bellman
-from qreps.valuefunctions.integrated_q_function import IntegratedQFunction
-from qreps.valuefunctions.q_function import SimpleQFunction
+from qreps.valuefunctions import IntegratedQFunction, SimpleQFunction
+
+from .abstract_algorithm import AbstractAlgorithm
 
 logger = logging.getLogger("qreps")
 logger.addHandler(logging.NullHandler())
@@ -50,7 +50,7 @@ class QREPS(AbstractAlgorithm):
         beta=0.1,
         eta=0.5,
         learner=torch.optim.SGD,
-        sampler=ExponentitedGradientSampler,
+        sampler: AbstractSampler = ExponentitedGradientSampler,
         sampler_args=None,
         *args,
         **kwargs,

@@ -1,11 +1,12 @@
 import dm_env
 import numpy as np
-from bsuite.baselines import base
-from bsuite.baselines.base import Action
+
+from qreps.algorithms import AbstractAlgorithm
 
 
-class OrderedDictFlattenTransform(base.Agent):
-    def __init__(self, agent: base.Agent, identifiers: list):
+class OrderedDictFlattenTransform(AbstractAlgorithm):
+    def __init__(self, agent: AbstractAlgorithm, identifiers: list):
+        super().__init__()
         self._agent = agent
         self.identifiers = identifiers
 
@@ -13,7 +14,7 @@ class OrderedDictFlattenTransform(base.Agent):
         arrays = [observation[identifier] for identifier in self.identifiers]
         return np.concatenate(arrays)
 
-    def select_action(self, timestep: dm_env.TimeStep) -> base.Action:
+    def select_action(self, timestep: dm_env.TimeStep):
         timestep_1 = dm_env.TimeStep(
             timestep.step_type,
             timestep.reward,
@@ -22,9 +23,7 @@ class OrderedDictFlattenTransform(base.Agent):
         )
         return self._agent.select_action(timestep_1)
 
-    def update(
-        self, timestep: dm_env.TimeStep, action: Action, new_timestep: dm_env.TimeStep,
-    ) -> None:
+    def update(self, timestep, action, new_timestep,) -> None:
         timestep_1 = dm_env.TimeStep(
             timestep.step_type,
             timestep.reward,

@@ -2,9 +2,7 @@ from abc import ABCMeta, abstractmethod
 
 import torch.nn as nn
 
-from qreps.feature_functions.abstract_feature_function import (
-    AbstractStateActionFeatureFunction,
-)
+from qreps.feature_functions import AbstractStateActionFeatureFunction
 
 
 class AbstractQFunction(nn.Module, metaclass=ABCMeta):

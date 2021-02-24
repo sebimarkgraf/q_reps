@@ -1,6 +1,5 @@
 from qreps.utilities.math import logmeanexp
-from qreps.valuefunctions.q_function import AbstractQFunction
-from qreps.valuefunctions.value_functions import AbstractValueFunction
+from qreps.valuefunctions import AbstractQFunction, AbstractValueFunction
 
 
 def empirical_bellman_error(

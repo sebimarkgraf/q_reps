@@ -5,11 +5,11 @@ from dm_control.rl.control import Environment
 from dm_control.suite.cartpole import balance
 from ray import tune
 
-from qreps.algorithms.reps import REPS
-from qreps.policies.gaussian_mlp import GaussianMLPStochasticPolicy
+from qreps.algorithms import REPS
+from qreps.policies import GaussianMLPStochasticPolicy
 from qreps.utilities.observation_transform import OrderedDictFlattenTransform
 from qreps.utilities.trainer import Trainer
-from qreps.valuefunctions.value_functions import NNValueFunction
+from qreps.valuefunctions import NNValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)

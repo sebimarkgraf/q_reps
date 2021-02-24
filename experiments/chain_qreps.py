@@ -5,13 +5,11 @@ from bsuite.utils import gym_wrapper
 from gym.envs.toy_text import NChainEnv
 from torch.utils.tensorboard import SummaryWriter
 
-from qreps.algorithms.qreps import QREPS
-from qreps.algorithms.sampler.best_response import BestResponseSampler
-from qreps.feature_functions.feature_concatenation import FeatureConcatenation
-from qreps.feature_functions.one_hot import OneHotFeature
-from qreps.policies.stochastic_table import StochasticTablePolicy
+from qreps.algorithms import QREPS
+from qreps.feature_functions import FeatureConcatenation, OneHotFeature
+from qreps.policies import StochasticTablePolicy
 from qreps.utilities.trainer import Trainer
-from qreps.valuefunctions.q_function import SimpleQFunction
+from qreps.valuefunctions import SimpleQFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -55,7 +53,7 @@ agent = QREPS(
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(num_iterations=10, max_steps=30, number_rollouts=5)
+trainer.train(num_iterations=10, max_steps=200, number_rollouts=1)
 policy.set_eval_mode(True)
 
 val_reward = trainer.validate(5, 100)

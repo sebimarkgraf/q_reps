@@ -2,7 +2,7 @@
 
 from abc import ABCMeta
 
-from qreps.policies.stochasticpolicy import StochasticPolicy
+from .stochasticpolicy import StochasticPolicy
 
 
 class AbstractQFunctionPolicy(StochasticPolicy, metaclass=ABCMeta):

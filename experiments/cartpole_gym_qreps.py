@@ -6,15 +6,12 @@ import torch
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
 
-from qreps.algorithms.qreps import QREPS
-from qreps.algorithms.sampler.best_response import BestResponseSampler
-from qreps.feature_functions.feature_concatenation import FeatureConcatenation
-from qreps.feature_functions.identity import IdentityFeature
-from qreps.feature_functions.nn_features import NNFeatures
-from qreps.feature_functions.one_hot import OneHotFeature
-from qreps.policies.categorical_mlp import CategoricalMLP
+from qreps.algorithms import QREPS
+from qreps.algorithms.sampler import BestResponseSampler
+from qreps.feature_functions import FeatureConcatenation, NNFeatures, OneHotFeature
+from qreps.policies import CategoricalMLP
 from qreps.utilities.trainer import Trainer
-from qreps.valuefunctions.q_function import SimpleQFunction
+from qreps.valuefunctions import SimpleQFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -51,11 +48,13 @@ agent = QREPS(
     q_function=q_function,
     learner=torch.optim.Adam,
     sampler=BestResponseSampler,
+    policy_lr=5e-4,
+    policy_opt_steps=500,
 )
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(100, 200, number_rollouts=5)
+trainer.train(30, 200, number_rollouts=5)
 
 policy.set_eval_mode(True)
 

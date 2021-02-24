@@ -1,19 +1,13 @@
 import logging
-from typing import Callable, Union
 
-import dm_env
-import numpy as np
 import torch
 import torch.nn as nn
-from bsuite.baselines import base
 from torch import Tensor
-from torch.utils.tensorboard import SummaryWriter
 
-from qreps.algorithms.abstract_algorithm import AbstractAlgorithm
-from qreps.memory.replay_buffer import ReplayBuffer
-from qreps.policies.direct_set_policy import DirectSetPolicy
-from qreps.policies.stochasticpolicy import StochasticPolicy
-from qreps.valuefunctions.value_functions import AbstractValueFunction
+from qreps.policies import DirectSetPolicy, StochasticPolicy
+from qreps.valuefunctions import AbstractValueFunction
+
+from .abstract_algorithm import AbstractAlgorithm
 
 logger = logging.getLogger("reps")
 logger.addHandler(logging.NullHandler())

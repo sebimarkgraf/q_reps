@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from qreps.policies.stochasticpolicy import StochasticPolicy
+from .stochasticpolicy import StochasticPolicy
 
 
 class GaussianMLPStochasticPolicy(StochasticPolicy, nn.Module):

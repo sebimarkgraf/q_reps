@@ -1,6 +1,6 @@
 import torch.nn.functional as F
 
-from qreps.feature_functions.abstract_feature_function import AbstractFeatureFunction
+from .abstract_feature_function import AbstractFeatureFunction
 
 
 class OneHotFeature(AbstractFeatureFunction):

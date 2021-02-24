@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 
 from qreps.algorithms.sampler.abstract_sampler import AbstractSampler
 

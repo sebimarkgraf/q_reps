@@ -1,6 +1,6 @@
 import torch
 
-from qreps.policies.stochasticpolicy import StochasticPolicy
+from .stochasticpolicy import StochasticPolicy
 
 
 class DirectSetPolicy(StochasticPolicy):

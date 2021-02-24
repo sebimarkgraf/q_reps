@@ -4,10 +4,10 @@ from bsuite.utils import gym_wrapper
 from gym.envs.toy_text import NChainEnv
 from ray import tune
 
-from qreps.algorithms.reps import REPS
-from qreps.policies.stochastic_table import StochasticTablePolicy
+from qreps.algorithms import REPS
+from qreps.policies import StochasticTablePolicy
 from qreps.utilities.trainer import Trainer
-from qreps.valuefunctions.value_functions import SimpleValueFunction
+from qreps.valuefunctions import SimpleValueFunction
 
 gym_env = NChainEnv(n=5, slip=0.2, small=0.1)
 env = gym_wrapper.DMEnvFromGym(gym_env)

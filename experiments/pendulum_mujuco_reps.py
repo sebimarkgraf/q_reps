@@ -5,11 +5,11 @@ from dm_control import suite, viewer
 from dm_control.rl.control import Environment
 from torch.utils.tensorboard import SummaryWriter
 
-from qreps.algorithms.reps import REPS
-from qreps.feature_functions.fourier_features import FourierFeatures
-from qreps.policies.gaussian_mlp import GaussianMLPStochasticPolicy
+from qreps.algorithms import REPS
+from qreps.feature_functions import FourierFeatures
+from qreps.policies import GaussianMLPStochasticPolicy
 from qreps.utilities.observation_transform import OrderedDictFlattenTransform
-from qreps.valuefunctions.value_functions import NNValueFunction
+from qreps.valuefunctions import NNValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)

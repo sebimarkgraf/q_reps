@@ -1,7 +1,8 @@
-from qreps.policies.stochasticpolicy import StochasticPolicy
+from qreps.policies import StochasticPolicy
 from qreps.utilities.util import integrate
-from qreps.valuefunctions.q_function import AbstractQFunction
-from qreps.valuefunctions.value_functions import AbstractValueFunction
+
+from .q_function import AbstractQFunction
+from .value_functions import AbstractValueFunction
 
 
 class IntegratedQFunction(AbstractValueFunction):
