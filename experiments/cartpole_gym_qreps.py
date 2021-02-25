@@ -48,8 +48,8 @@ agent = QREPS(
     q_function=q_function,
     learner=torch.optim.Adam,
     sampler=BestResponseSampler,
-    policy_lr=5e-4,
-    policy_opt_steps=500,
+    policy_lr=2e-2,
+    policy_opt_steps=600,
 )
 
 trainer = Trainer()

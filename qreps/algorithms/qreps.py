@@ -50,7 +50,7 @@ class QREPS(AbstractAlgorithm):
         saddle_point_steps: int = 300,
         beta: float = 0.1,
         eta: float = 0.5,
-        learner: torch.optim.Optimizer = torch.optim.SGD,
+        learner: Type[torch.optim.Optimizer] = torch.optim.SGD,
         sampler: Type[AbstractSampler] = ExponentitedGradientSampler,
         sampler_args: dict = None,
         *args,
@@ -183,8 +183,8 @@ class QREPS(AbstractAlgorithm):
             )
 
         # Average over the weights
-        with torch.no_grad():
-            self.q_function.model.weight.data = torch.mean(theta_hist, 0)
+        # with torch.no_grad():
+        #    self.q_function.model.weight.data = torch.mean(theta_hist, 0).detach()
 
         return self.S_k(z_dist, N, features, features_next, actions, rewards)
 
