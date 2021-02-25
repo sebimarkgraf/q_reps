@@ -100,6 +100,7 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
             self.writer.add_scalar("train/entropy_mean", entropy, iteration)
             self.writer.add_histogram("train/weights", weights, iteration)
             self.writer.add_histogram("train/reward_hist", rewards, iteration)
+            self.writer.add_scalar("train/num_obs", observations.shape[0], iteration)
 
     def update(
         self, timestep: dm_env.TimeStep, action, new_timestep: dm_env.TimeStep,

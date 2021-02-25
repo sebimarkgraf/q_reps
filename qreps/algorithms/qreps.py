@@ -251,7 +251,6 @@ class QREPS(AbstractAlgorithm):
         )
         if self.writer is not None:
             self.writer.add_scalar("train/qreps_loss", qreps_loss, iteration)
-            self.writer.add_scalar("train/num_obs", observations.shape[0], iteration)
 
     def nll_loss(self, observations, next_observations, rewards, actions):
         weights = self.calc_weights(observations, next_observations, rewards, actions)
