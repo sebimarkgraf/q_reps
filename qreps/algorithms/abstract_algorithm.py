@@ -80,7 +80,9 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
         kl_loss = torch.distributions.kl_divergence(dist_before, dist_after).mean(0)
         entropy = self.policy.distribution(observations).entropy().mean(0)
 
-        logger.info(f"Iteration {iteration} done, " f"Reward {torch.sum(rewards)}")
+        logger.info(
+            f"Iteration {iteration} done, " f"Reward {torch.sum(rewards).item():.2f}"
+        )
 
         if self.writer is not None:
             self.writer.add_scalar("train/pol_loss", pol_loss, iteration)

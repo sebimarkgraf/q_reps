@@ -47,12 +47,12 @@ class QREPS(AbstractAlgorithm):
         self,
         q_function: SimpleQFunction,
         policy: StochasticPolicy,
-        saddle_point_steps=300,
-        beta=0.1,
-        eta=0.5,
-        learner=torch.optim.SGD,
+        saddle_point_steps: int = 300,
+        beta: float = 0.1,
+        eta: float = 0.5,
+        learner: torch.optim.Optimizer = torch.optim.SGD,
         sampler: Type[AbstractSampler] = ExponentitedGradientSampler,
-        sampler_args=None,
+        sampler_args: dict = None,
         *args,
         **kwargs,
     ):
@@ -87,7 +87,9 @@ class QREPS(AbstractAlgorithm):
         # Setting alpha to eta, as mentioned in Paper page 19
         self.alpha = eta
 
-    def g_hat(self, x_1, a_1, x, a):
+    def g_hat(
+        self, x_1: torch.Tensor, a_1: torch.Tensor, x: torch.Tensor, a: torch.Tensor
+    ):
         return self.discount * self.q_function.features(
             x_1, a_1
         ) - self.q_function.features(x, a)
