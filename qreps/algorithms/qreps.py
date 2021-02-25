@@ -3,6 +3,7 @@ import math
 
 import torch
 from torch import Tensor
+from typing_extensions import Type
 
 from qreps.algorithms.sampler import AbstractSampler, ExponentitedGradientSampler
 from qreps.policies import StochasticPolicy
@@ -50,7 +51,7 @@ class QREPS(AbstractAlgorithm):
         beta=0.1,
         eta=0.5,
         learner=torch.optim.SGD,
-        sampler: AbstractSampler = ExponentitedGradientSampler,
+        sampler: Type[AbstractSampler] = ExponentitedGradientSampler,
         sampler_args=None,
         *args,
         **kwargs,
@@ -81,7 +82,7 @@ class QREPS(AbstractAlgorithm):
         )
         self.optimize_policy = True
         self.sampler = sampler
-        self.sampler_args = sampler_args
+        self.sampler_args = sampler_args if sampler_args is not None else {}
 
         # Setting alpha to eta, as mentioned in Paper page 19
         self.alpha = eta
@@ -118,8 +119,7 @@ class QREPS(AbstractAlgorithm):
     def qreps_eval(self, features, features_next, actions, rewards, iteration):
         N = features.shape[0]
         # Initialize z as uniform distribution over all samples
-        sampler_args = self.sampler_args if self.sampler_args is not None else {}
-        sampler = self.sampler(length=N, eta=self.eta, **sampler_args)
+        sampler = self.sampler(length=N, eta=self.eta, **self.sampler_args)
         z_dist = sampler.get_distribution()
 
         # Keep history of parameters for averaging
