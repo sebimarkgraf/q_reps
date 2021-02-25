@@ -6,9 +6,10 @@ from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms import REPS
+from qreps.feature_functions import NNFeatures
 from qreps.policies import CategoricalMLP
 from qreps.utilities.trainer import Trainer
-from qreps.valuefunctions import NNValueFunction
+from qreps.valuefunctions import NNValueFunction, SimpleValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -25,23 +26,26 @@ print(env.observation_spec())
 print(env.action_spec())
 
 num_obs = env.observation_spec().shape[0]
-writer = SummaryWriter(comment="_cartpole_gym_reps_eta_10")
+writer = SummaryWriter(comment="_cartpole_gym_reps")
 policy = CategoricalMLP(num_obs, 2)
+
+
+feature_fn = NNFeatures(num_obs, feat_dim=200)
 
 agent = REPS(
     batch_size=50,
     policy=policy,
-    value_function=NNValueFunction(obs_dim=num_obs),
+    value_function=SimpleValueFunction(obs_dim=200, feature_fn=feature_fn),
     writer=writer,
-    eta=1.0,
-    entropy_constrained=True,
+    eta=5.0,
+    entropy_constrained=False,
     policy_lr=5e-4,
-    dual_lr=5e-4,
+    dual_lr=0.01,
 )
 
 trainer = Trainer()
 trainer.setup(agent, env)
-trainer.train(10, 200, number_rollouts=5)
+trainer.train(30, 200, number_rollouts=5)
 
 policy.set_eval_mode(True)
 

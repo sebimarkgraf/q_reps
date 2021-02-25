@@ -57,7 +57,7 @@ class REPS(AbstractAlgorithm):
         self.optimize_policy = optimize_policy
 
     def dual(
-        self, features: Tensor, features_next: Tensor, rewards: Tensor, _actions: Tensor
+        self, features: Tensor, features_next: Tensor, rewards: Tensor, actions: Tensor
     ):
         """
         Implements REPS loss
@@ -69,7 +69,7 @@ class REPS(AbstractAlgorithm):
         @return: the calculated dual function value, supporting autograd of PyTorch
         """
         value = self.value_function(features)
-        weights = self.calc_weights(features, features_next, rewards)
+        weights = self.calc_weights(features, features_next, rewards, actions)
         normalizer = torch.logsumexp(weights, dim=0)
         dual = self.eta() * (self.epsilon + normalizer) + (1.0 - self.discount) * value
 
@@ -95,7 +95,7 @@ class REPS(AbstractAlgorithm):
         return torch.exp(self.log_eta) + float(1e-6)
 
     def calc_weights(
-        self, features: Tensor, features_next: Tensor, rewards: Tensor
+        self, features: Tensor, features_next: Tensor, rewards: Tensor, actions: Tensor
     ) -> Tensor:
         """
         Calculate the weights from the advantage for updating the policy
@@ -155,7 +155,7 @@ class REPS(AbstractAlgorithm):
             self.writer.add_scalar("train/dual_loss", dual_loss, iteration)
 
     def nll_loss(self, observations, next_observations, rewards, actions):
-        weights = self.calc_weights(observations, next_observations, rewards)
+        weights = self.calc_weights(observations, next_observations, rewards, actions)
         log_likes = self.policy.log_likelihood(observations, actions)
         nll = weights.detach() * log_likes
         return -torch.mean(torch.clamp_max(nll, 1e-3))
