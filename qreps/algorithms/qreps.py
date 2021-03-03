@@ -46,7 +46,6 @@ class QREPS(AbstractAlgorithm):
     def __init__(
         self,
         q_function: SimpleQFunction,
-        policy: StochasticPolicy,
         saddle_point_steps: int = 300,
         beta: float = 0.1,
         eta: float = 0.5,
@@ -54,6 +53,7 @@ class QREPS(AbstractAlgorithm):
         sampler: Type[AbstractSampler] = ExponentitedGradientSampler,
         sampler_args: dict = None,
         average_weights: bool = True,
+        grad_samples: int = 10,
         *args,
         **kwargs,
     ):
@@ -73,15 +73,12 @@ class QREPS(AbstractAlgorithm):
         @param kwargs: keyword arguments for the abstract algorithm.
         """
         super().__init__(*args, **kwargs)
-        self.policy = policy
         self.saddle_point_steps = saddle_point_steps
         self.eta = eta
         self.q_function = q_function
         self.value_function = IntegratedQFunction(self.policy, self.q_function)
         self.theta_opt = learner(self.q_function.parameters(), lr=beta)
-        self.pol_optimizer = torch.optim.Adam(
-            self.policy.parameters(), lr=self.policy_lr
-        )
+
         self.optimize_policy = True
         self.sampler = sampler
         self.sampler_args = sampler_args if sampler_args is not None else {}
@@ -89,6 +86,7 @@ class QREPS(AbstractAlgorithm):
         # Setting alpha to eta, as mentioned in Paper page 19
         self.alpha = eta
         self.average_weights = average_weights
+        self.grad_samples = grad_samples
 
     def g_hat(
         self, x_1: torch.Tensor, a_1: torch.Tensor, x: torch.Tensor, a: torch.Tensor
@@ -138,8 +136,8 @@ class QREPS(AbstractAlgorithm):
             # Learner
             self.theta_opt.zero_grad()
             grad = torch.zeros(self.q_function.model.weight.shape)
-            grad_samples = 1
-            for i in range(grad_samples):
+
+            for i in range(self.grad_samples):
                 sample_index = z_dist.sample((1,)).item()
                 x, a = (
                     features[sample_index].view(1, -1),
@@ -148,7 +146,7 @@ class QREPS(AbstractAlgorithm):
                 x1 = features_next[sample_index].view(1, -1)
                 a1 = self.theta_policy(x1).view(1, -1)
                 grad += self.g_hat(x1, a1, x, a)
-            grad /= grad_samples
+            grad /= self.grad_samples
             self.q_function.model.weight.backward(grad)
 
             # indicees = z_dist.sample((10,))

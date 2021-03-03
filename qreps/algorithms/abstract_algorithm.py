@@ -1,6 +1,6 @@
 import logging
 from abc import ABCMeta, abstractmethod
-from typing import Callable, Union
+from typing import Callable, Type, Union
 
 import dm_env
 import numpy as np
@@ -10,6 +10,7 @@ from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 
 from qreps.memory.replay_buffer import ReplayBuffer
+from qreps.policies import StochasticPolicy
 
 DEFAULT_REPLAY_BUFFER_SIZE = 100000
 
@@ -24,24 +25,31 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
 
     def __init__(
         self,
+        policy: StochasticPolicy,
         writer: SummaryWriter = None,
         buffer=None,
         reward_transformer=None,
         discount=1.0,
+        policy_optimizer: Type[torch.optim.Optimizer] = torch.optim.SGD,
         policy_opt_steps=150,
         policy_lr=1e-2,
     ):
         super().__init__()
+        # Organizational setup
         self.writer = writer
         if buffer is None:
             self.buffer = ReplayBuffer(DEFAULT_REPLAY_BUFFER_SIZE)
         else:
             self.buffer = buffer
 
+        # Default MDP attributes
         self.reward_transformer = reward_transformer
         self.discount = discount
+
+        # Policy setup
+        self.policy = policy
         self.policy_opt_steps = policy_opt_steps
-        self.policy_lr = policy_lr
+        self.pol_optimizer = policy_optimizer(self.policy.parameters(), lr=policy_lr)
 
     def get_rewards(self, rewards):
         """

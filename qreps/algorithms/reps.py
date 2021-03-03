@@ -18,11 +18,9 @@ class REPS(AbstractAlgorithm):
 
     def __init__(
         self,
-        policy: StochasticPolicy,
         value_function: AbstractValueFunction,
         dual_opt_steps=150,
         batch_size=1000,
-        optimizer=torch.optim.Adam,
         optimize_policy=True,
         entropy_constrained=True,
         eta=0.5,  # Default from Q-REPS paper
@@ -46,11 +44,7 @@ class REPS(AbstractAlgorithm):
         self.value_function = value_function
         self.dual_opt_steps = dual_opt_steps
 
-        # Policy Setup
-        self.policy = policy
-
         self.batch_size = batch_size
-        self.pol_optimizer = optimizer(self.policy.parameters(), lr=self.policy_lr)
         self.dual_optimizer = dual_optimizer(
             self.value_function.parameters(), lr=dual_lr
         )
