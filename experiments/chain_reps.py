@@ -1,56 +1,59 @@
+import sys
+
+sys.path.append("../")
+
 import torch
-import torch.nn.functional as F
 from bsuite.utils import gym_wrapper
 from gym.envs.toy_text import NChainEnv
-from ray import tune
+from tensorboardX import SummaryWriter
 
+import wandb
 from qreps.algorithms import REPS
+from qreps.feature_functions import OneHotFeature
 from qreps.policies import StochasticTablePolicy
 from qreps.utilities.trainer import Trainer
 from qreps.valuefunctions import SimpleValueFunction
 
-gym_env = NChainEnv(n=5, slip=0.2, small=0.1)
+torch.manual_seed(1234)
+
+gym_env = NChainEnv(n=5)
 env = gym_wrapper.DMEnvFromGym(gym_env)
 obs_num = env.observation_spec().num_values
 act_num = env.action_spec().num_values
 
 config = {
-    "num_rollouts": tune.grid_search([3, 5, 10, 15]),
-    "gamma": tune.uniform(0.8, 1.0),
-    "eta": tune.loguniform(2e-4, 2e-1, 10),
-    "dual_lr": tune.loguniform(1e-3, 1e-1),
-    "lr": tune.loguniform(1e-3, 1e-1),
+    "discount": 0.99,
+    "eta": 2.0,
+    "dual_lr": 0.07,
+    "policy_lr": 0.005,
+    "entropy_constrained": True,
+    "dual_opt_steps": 300,
+    "policy_opt_steps": 300,
 }
 
 
 def train(config: dict):
-    def feature_fn(x):
-        return F.one_hot(x.long(), obs_num).float()
-
-    value_function = SimpleValueFunction(obs_dim=obs_num, feature_fn=feature_fn)
-
+    value_function = SimpleValueFunction(
+        obs_dim=obs_num, feature_fn=OneHotFeature(obs_num)
+    )
     policy = StochasticTablePolicy(obs_num, act_num)
 
-    agent = REPS(
-        policy=policy,
-        value_function=value_function,
-        discount=config["gamma"],
-        eta=config["eta"],
-        dual_lr=config["dual_lr"],
-        lr=config["lr"],
-    )
+    writer = SummaryWriter()
+
+    agent = REPS(policy=policy, value_function=value_function, writer=writer, **config)
 
     trainer = Trainer()
     trainer.setup(agent, env)
-    trainer.train(
-        num_iterations=10, max_steps=30, number_rollouts=config["num_rollouts"]
-    )
-    policy.set_eval_mode(True)
-    val_reward = trainer.validate(5, 100)
-    tune.report(reward=torch.sum(torch.tensor(val_reward)).item())
+    trainer.train(num_iterations=10, max_steps=200, number_rollouts=1)
 
 
-analysis = tune.run(train, config=config, metric="reward", mode="max", num_samples=30)
-
-
-print(analysis.best_config)
+wandb.init(
+    project="qreps",
+    entity="sebimarkgraf",
+    sync_tensorboard=True,
+    tags=["chain_profiling"],
+    job_type="hyperparam",
+    config=config,
+)
+train(wandb.config)
+wandb.finish()

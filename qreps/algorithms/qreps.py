@@ -53,6 +53,7 @@ class QREPS(AbstractAlgorithm):
         learner: Type[torch.optim.Optimizer] = torch.optim.SGD,
         sampler: Type[AbstractSampler] = ExponentitedGradientSampler,
         sampler_args: dict = None,
+        average_weights: bool = True,
         *args,
         **kwargs,
     ):
@@ -67,6 +68,7 @@ class QREPS(AbstractAlgorithm):
         @param learner: Which learner should be used. The default recommendations are SGD and Adam.
         @param sampler: Which sampler to use. This is highly problem dependent.
         @param sampler_args: Args that should be provided when creating the sampler.
+        @param average_weights: Enable averaging the parameters after the optimization
         @param args: arguments for the abstract algorithm.
         @param kwargs: keyword arguments for the abstract algorithm.
         """
@@ -86,6 +88,7 @@ class QREPS(AbstractAlgorithm):
 
         # Setting alpha to eta, as mentioned in Paper page 19
         self.alpha = eta
+        self.average_weights = average_weights
 
     def g_hat(
         self, x_1: torch.Tensor, a_1: torch.Tensor, x: torch.Tensor, a: torch.Tensor
@@ -167,24 +170,10 @@ class QREPS(AbstractAlgorithm):
                 )
                 z_dist = sampler.get_next_distribution(bellman)
 
-            self.writer.add_scalar(
-                "train/opt_elbe",
-                empirical_logistic_bellman(
-                    self.eta,
-                    features,
-                    features_next,
-                    actions,
-                    rewards,
-                    self.q_function,
-                    self.value_function,
-                    self.discount,
-                ),
-                self.saddle_point_steps * iteration + tau,
-            )
-
         # Average over the weights
-        # with torch.no_grad():
-        #    self.q_function.model.weight.data = torch.mean(theta_hist, 0).detach()
+        if self.average_weights is True:
+            with torch.no_grad():
+                self.q_function.model.weight.data = torch.mean(theta_hist, 0).detach()
 
         return self.S_k(z_dist, N, features, features_next, actions, rewards)
 
