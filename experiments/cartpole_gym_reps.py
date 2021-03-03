@@ -1,7 +1,11 @@
 import logging
+import sys
 import time
 
+sys.path.append("../")
+
 import gym
+import numpy as np
 import torch
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
@@ -11,7 +15,7 @@ from qreps.algorithms import REPS
 from qreps.feature_functions import NNFeatures
 from qreps.policies import CategoricalMLP
 from qreps.utilities.trainer import Trainer
-from qreps.valuefunctions import NNValueFunction, SimpleValueFunction
+from qreps.valuefunctions import SimpleValueFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -20,20 +24,24 @@ FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
-torch.manual_seed(1234)
+SEED = 1234
+torch.manual_seed(SEED)
+np.random.seed(SEED)
 
 reps_config = {
-    "discount": 1.0,
-    "eta": 5.0,
-    "dual_lr": 0.01,
-    "policy_lr": 5e-4,
+    "discount": 0.99,
+    "eta": 0.4515,
+    "dual_lr": 2e-2,
+    "policy_lr": 2e-5,
     "entropy_constrained": False,
     "dual_opt_steps": 300,
+    "policy_opt_steps": 300,
 }
 
 timestamp = time.time()
 gym_env = gym.make("CartPole-v0")
-gym_env = gym.wrappers.Monitor(gym_env, directory=f"./frozen_lake_{timestamp}")
+gym_env.seed(SEED)
+# gym_env = gym.wrappers.Monitor(gym_env, directory=f"./frozen_lake_{timestamp}")
 env = gym_wrapper.DMEnvFromGym(gym_env)
 
 num_obs = env.observation_spec().shape[0]

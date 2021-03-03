@@ -4,8 +4,8 @@ import time
 
 sys.path.append("../")
 
-
 import gym
+import numpy as np
 import torch
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
@@ -24,19 +24,23 @@ for handler in logging.root.handlers[:]:
 FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-torch.manual_seed(1234)
+SEED = 1234
+torch.manual_seed(SEED)
+np.random.seed(SEED)
 
 qreps_config = {
-    "eta": 0.02,
-    "beta": 0.8,
-    "saddle_point_steps": 450,
-    "policy_opt_steps": 450,
-    "policy_lr": 2e-3,
+    "eta": 0.01,
+    "beta": 0.08,
+    "saddle_point_steps": 300,
+    "policy_opt_steps": 150,
+    "policy_lr": 5e-4,
     "discount": 0.99,
+    "average_weights": False,
 }
 
 timestamp = time.time()
 gym_env = gym.make("CartPole-v0")
+gym_env.seed(SEED)
 # gym_env = gym.wrappers.Monitor(gym_env, directory=f"./frozen_lake_{timestamp}")
 
 env = gym_wrapper.DMEnvFromGym(gym_env)

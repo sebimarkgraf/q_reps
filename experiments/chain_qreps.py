@@ -38,6 +38,7 @@ qreps_config = {
     "policy_opt_steps": 300,
     "policy_lr": 0.04,
     "discount": 1.0,
+    "grad_samples": 5,
 }
 
 
@@ -65,6 +66,8 @@ def train(config: dict):
     trainer = Trainer()
     trainer.setup(agent, env)
     trainer.train(num_iterations=10, max_steps=200, number_rollouts=1)
+
+    print("Policy", policy._policy)
 
 
 wandb.init(

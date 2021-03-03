@@ -1,3 +1,5 @@
+import torch
+
 from qreps.policies import StochasticPolicy
 from qreps.utilities.util import integrate
 
@@ -21,8 +23,8 @@ class IntegratedQFunction(AbstractValueFunction):
 
     def forward(self, obs):
         def q_for_obs(action):
-            return self.q_func(obs, action)
+            return self.alpha * self.q_func(obs, action)
 
         distribution = self.policy.distribution(obs)
-        values = integrate(q_for_obs, distribution)
+        values = 1 / self.alpha * integrate(q_for_obs, distribution)
         return values.squeeze(-1)

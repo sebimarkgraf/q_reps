@@ -30,7 +30,7 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
         buffer=None,
         reward_transformer=None,
         discount=1.0,
-        policy_optimizer: Type[torch.optim.Optimizer] = torch.optim.SGD,
+        policy_optimizer: Type[torch.optim.Optimizer] = torch.optim.Adam,
         policy_opt_steps=150,
         policy_lr=1e-2,
     ):
@@ -92,9 +92,10 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
         iteration,
     ):
         pol_loss = self.nll_loss(observations, next_observations, rewards, actions)
-        kl_loss = torch.distributions.kl_divergence(dist_before, dist_after).mean(0)
+        kl_loss = torch.distributions.kl_divergence(dist_after, dist_before).mean(0)
         entropy = self.policy.distribution(observations).entropy().mean(0)
         weights = self.calc_weights(observations, next_observations, rewards, actions)
+        weights = weights - torch.max(weights)
 
         logger.info(
             f"Iteration {iteration} done, " f"Reward {torch.sum(rewards).item():.2f}"
@@ -156,3 +157,10 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
 
         for i in range(optimizer_steps):
             optimizer.step(closure)
+
+    def nll_loss(self, observations, next_observations, rewards, actions):
+        weights = self.calc_weights(observations, next_observations, rewards, actions)
+        weights = weights - torch.max(weights)
+        log_likes = self.policy.log_likelihood(observations, actions)
+        nll = torch.exp(weights.detach()) * log_likes
+        return -torch.mean(nll)

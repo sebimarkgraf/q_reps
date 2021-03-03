@@ -39,6 +39,7 @@ qreps_config = {
     "policy_opt_steps": 300,
     "policy_lr": 0.04,
     "discount": 1.0,
+    "grad_samples": 1,
 }
 
 

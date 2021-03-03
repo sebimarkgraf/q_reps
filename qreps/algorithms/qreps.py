@@ -6,8 +6,7 @@ from torch import Tensor
 from typing_extensions import Type
 
 from qreps.algorithms.sampler import AbstractSampler, ExponentitedGradientSampler
-from qreps.policies import StochasticPolicy
-from qreps.utilities.elbe import empirical_bellman_error, empirical_logistic_bellman
+from qreps.utilities.elbe import empirical_bellman_error
 from qreps.valuefunctions import IntegratedQFunction, SimpleQFunction
 
 from .abstract_algorithm import AbstractAlgorithm
@@ -75,8 +74,11 @@ class QREPS(AbstractAlgorithm):
         super().__init__(*args, **kwargs)
         self.saddle_point_steps = saddle_point_steps
         self.eta = eta
+        self.alpha = eta
         self.q_function = q_function
-        self.value_function = IntegratedQFunction(self.policy, self.q_function)
+        self.value_function = IntegratedQFunction(
+            self.policy, self.q_function, alpha=self.alpha
+        )
         self.theta_opt = learner(self.q_function.parameters(), lr=beta)
 
         self.optimize_policy = True
@@ -84,7 +86,6 @@ class QREPS(AbstractAlgorithm):
         self.sampler_args = sampler_args if sampler_args is not None else {}
 
         # Setting alpha to eta, as mentioned in Paper page 19
-        self.alpha = eta
         self.average_weights = average_weights
         self.grad_samples = grad_samples
 
@@ -97,27 +98,21 @@ class QREPS(AbstractAlgorithm):
 
     def theta_policy(self, x):
         distribution = self.policy.distribution(x)
-        value = self.value_function(x)
-
-        def func(a):
-            return self.alpha * (self.q_function(x, a) - value)
+        value_state = self.value_function(x)
 
         if not distribution.has_enumerate_support:
             raise Exception("Not supported distribution for QREPS")
 
-        actions = []
-        values = []
-        for action in distribution.enumerate_support():
-            q_values = func(action)
-            log_probs = distribution.log_prob(action)
-            value = q_values * torch.exp(log_probs.detach())
-            values.append(value)
-            actions.append(action)
+        actions = distribution.enumerate_support()
+        probs = distribution.probs
+        q_values = torch.tensor([self.q_function(x, a) for a in actions])
+        policy_values = self.alpha * (q_values - value_state)
+        values = torch.exp(policy_values) * probs
 
-        dist = torch.distributions.Categorical(logits=torch.tensor(values))
+        dist = torch.distributions.Categorical(logits=values)
         sample = dist.sample((1,))
-
-        return actions[sample]
+        sampled_actions = actions[sample]
+        return sampled_actions
 
     def qreps_eval(self, features, features_next, actions, rewards, iteration):
         N = features.shape[0]
@@ -139,18 +134,18 @@ class QREPS(AbstractAlgorithm):
 
             for i in range(self.grad_samples):
                 sample_index = z_dist.sample((1,)).item()
-                x, a = (
+                x, a, x1 = (
                     features[sample_index].view(1, -1),
                     actions[sample_index].view(1, -1),
+                    features_next[sample_index].view(1, -1),
                 )
-                x1 = features_next[sample_index].view(1, -1)
                 a1 = self.theta_policy(x1).view(1, -1)
                 grad += self.g_hat(x1, a1, x, a)
             grad /= self.grad_samples
             self.q_function.model.weight.backward(grad)
 
-            # indicees = z_dist.sample((10,))
             # loss = self.S_k(z_dist, N, features, features_next, actions, rewards)
+            # loss = empirical_logistic_bellman(self.eta, features, features_next, actions, rewards, self.q_function, self.value_function, self.discount)
             # loss.backward()
             self.theta_opt.step()
             theta_hist[tau] = self.q_function.model.weight
@@ -185,7 +180,10 @@ class QREPS(AbstractAlgorithm):
             self.value_function,
             discount=self.discount,
         )
-        loss = torch.sum(z.probs * (bellman_error - (math.log(N) + z.probs) / self.eta))
+        loss = torch.sum(
+            z.probs.detach()
+            * (bellman_error - (math.log(N) * z.probs.detach()) / self.eta)
+        )
         # + (1 - self.discount) * self.value_function(features))
         return loss
 
@@ -238,9 +236,3 @@ class QREPS(AbstractAlgorithm):
         )
         if self.writer is not None:
             self.writer.add_scalar("train/qreps_loss", qreps_loss, iteration)
-
-    def nll_loss(self, observations, next_observations, rewards, actions):
-        weights = self.calc_weights(observations, next_observations, rewards, actions)
-        log_likes = self.policy.log_likelihood(observations, actions)
-        nll = weights.detach() * log_likes
-        return -torch.mean(torch.clamp_max(nll, 1e-3))

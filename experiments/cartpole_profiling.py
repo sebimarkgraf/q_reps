@@ -7,6 +7,7 @@ import torch
 from qreps.algorithms.sampler import BestResponseSampler
 
 sys.path.append("../")
+import numpy as np
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
 
@@ -17,20 +18,18 @@ from qreps.policies import CategoricalMLP
 from qreps.utilities.trainer import Trainer
 from qreps.valuefunctions import SimpleQFunction, SimpleValueFunction
 
-torch.manual_seed(1234)
-
-gym_env = gym.make("CartPole-v0")
-env = gym_wrapper.DMEnvFromGym(gym_env)
-num_obs = env.observation_spec().shape[0]
-num_act = env.action_spec().num_values
+SEED = 1234
+torch.manual_seed(SEED)
+np.random.seed(SEED)
 
 reps_config = {
-    "discount": 1.0,
-    "eta": 5.0,
-    "dual_lr": 0.01,
-    "policy_lr": 5e-4,
+    "discount": 0.99,
+    "eta": 0.4515,
+    "dual_lr": 2e-2,
+    "policy_lr": 2e-5,
     "entropy_constrained": False,
     "dual_opt_steps": 300,
+    "policy_opt_steps": 300,
 }
 
 
@@ -44,8 +43,16 @@ qreps_config = {
 }
 
 
-def create_agent(algo, writer, config):
+def create_env(seed=SEED):
+    gym_env = gym.make("CartPole-v0")
+    gym_env.seed(seed)
+    env = gym_wrapper.DMEnvFromGym(gym_env)
+    num_obs = env.observation_spec().shape[0]
+    num_act = env.action_spec().num_values
+    return env, num_obs, num_act
 
+
+def create_agent(algo, writer, config, num_obs, num_act):
     policy = CategoricalMLP(obs_shape=num_obs, act_shape=num_act)
     FEAT_DIM = 200
     obs_feature_fn = NNFeatures(num_obs, feat_dim=FEAT_DIM)
@@ -76,7 +83,7 @@ def create_agent(algo, writer, config):
         )
 
 
-def evaluate(agent):
+def evaluate(agent, env):
     trainer = Trainer()
     trainer.setup(agent, env)
     trainer.train(num_iterations=30, max_steps=200, number_rollouts=5)
@@ -97,8 +104,9 @@ def main():
                 config=config,
             )
             writer = SummaryWriter()
-            agent = create_agent(algo, writer, config)
-            evaluate(agent)
+            env, num_obs, num_act = create_env()
+            agent = create_agent(algo, writer, config, num_obs, num_act)
+            evaluate(agent, env)
             writer.close()
             wandb.finish()
 

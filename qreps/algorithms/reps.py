@@ -147,9 +147,3 @@ class REPS(AbstractAlgorithm):
         )
         if self.writer is not None:
             self.writer.add_scalar("train/dual_loss", dual_loss, iteration)
-
-    def nll_loss(self, observations, next_observations, rewards, actions):
-        weights = self.calc_weights(observations, next_observations, rewards, actions)
-        log_likes = self.policy.log_likelihood(observations, actions)
-        nll = weights.detach() * log_likes
-        return -torch.mean(torch.clamp_max(nll, 1e-3))
