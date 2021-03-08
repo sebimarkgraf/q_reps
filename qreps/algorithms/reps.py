@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from qreps.policies import DirectSetPolicy, StochasticPolicy
+from qreps.policies import DirectSetPolicy
 from qreps.valuefunctions import AbstractValueFunction
 
 from .abstract_algorithm import AbstractAlgorithm
@@ -147,3 +147,8 @@ class REPS(AbstractAlgorithm):
         )
         if self.writer is not None:
             self.writer.add_scalar("train/dual_loss", dual_loss, iteration)
+            self.writer.add_scalar(
+                "train/values",
+                self.value_function(next_observations).mean(0),
+                iteration,
+            )

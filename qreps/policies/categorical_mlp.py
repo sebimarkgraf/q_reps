@@ -15,7 +15,6 @@ class CategoricalMLP(StochasticPolicy, nn.Module):
             nn.Linear(200, 200),
             nn.ReLU(),
             nn.Linear(200, act_shape),
-            nn.Softmax(dim=-1),
         )
 
     def forward(self, x):
@@ -23,7 +22,7 @@ class CategoricalMLP(StochasticPolicy, nn.Module):
 
     def distribution(self, observation) -> torch.distributions.Distribution:
         output = self.forward(observation)
-        return torch.distributions.categorical.Categorical(output)
+        return torch.distributions.categorical.Categorical(logits=output)
 
     @torch.no_grad()
     def sample(self, observation):

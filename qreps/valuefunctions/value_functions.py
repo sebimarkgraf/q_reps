@@ -20,7 +20,7 @@ class SimpleValueFunction(AbstractValueFunction):
         self.model = nn.Sequential(nn.Linear(self.obs_dim, 1, bias=False))
 
     def forward(self, obs):
-        return self.model(self.feature_fn(obs)).squeeze()
+        return self.model(self.feature_fn(obs)).squeeze(-1)
 
 
 class NNValueFunction(AbstractValueFunction):
@@ -36,4 +36,4 @@ class NNValueFunction(AbstractValueFunction):
         )
 
     def forward(self, x):
-        return self.model(self.feature_fn(x)).squeeze()
+        return self.model(self.feature_fn(x)).squeeze(-1)

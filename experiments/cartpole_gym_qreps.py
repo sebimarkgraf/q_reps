@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import wandb
 from qreps.algorithms import QREPS
-from qreps.algorithms.sampler import BestResponseSampler
+from qreps.algorithms.sampler import BestResponseSampler, ExponentitedGradientSampler
 from qreps.feature_functions import FeatureConcatenation, NNFeatures, OneHotFeature
 from qreps.policies import CategoricalMLP
 from qreps.utilities.trainer import Trainer
@@ -32,20 +32,31 @@ qreps_config = {
     "eta": 0.01,
     "beta": 0.08,
     "saddle_point_steps": 300,
-    "policy_opt_steps": 150,
-    "policy_lr": 5e-4,
+    "policy_opt_steps": 300,
+    "policy_lr": 2e-5,
     "discount": 0.99,
-    "average_weights": False,
+    "average_weights": True,
+    "grad_samples": 10,
+}
+
+qreps_config_test = {
+    "beta": 0.08557,
+    "discount": 0.99,
+    "eta": 1,
+    "policy_lr": 0.002,
+    "policy_opt_steps": 450,
+    "saddle_point_steps": 300,
 }
 
 timestamp = time.time()
 gym_env = gym.make("CartPole-v0")
 gym_env.seed(SEED)
-# gym_env = gym.wrappers.Monitor(gym_env, directory=f"./frozen_lake_{timestamp}")
+# gym_env = gym.wrappers.Monitor(gym_env, directory=f"./frozen_lake_{timestamp}", video_callable=lambda x: True)
 
 env = gym_wrapper.DMEnvFromGym(gym_env)
 num_obs = env.observation_spec().shape[0]
 num_act = env.action_spec().num_values
+print(env.observation_spec())
 
 
 def train(config: dict):
@@ -70,7 +81,7 @@ def train(config: dict):
 
     trainer = Trainer()
     trainer.setup(agent, env)
-    trainer.train(num_iterations=30, max_steps=200, number_rollouts=5)
+    trainer.train(num_iterations=20, max_steps=200, number_rollouts=5)
 
 
 wandb.init(

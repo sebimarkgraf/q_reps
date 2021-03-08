@@ -23,8 +23,10 @@ class IntegratedQFunction(AbstractValueFunction):
 
     def forward(self, obs):
         def q_for_obs(action):
-            return self.alpha * self.q_func(obs, action)
+            # FIXME: This can overflow
+            return torch.exp(self.alpha * self.q_func(obs, action))
 
         distribution = self.policy.distribution(obs)
-        values = 1 / self.alpha * integrate(q_for_obs, distribution)
+        integrated_values = integrate(q_for_obs, distribution)
+        values = 1 / self.alpha * torch.log(integrated_values)
         return values.squeeze(-1)

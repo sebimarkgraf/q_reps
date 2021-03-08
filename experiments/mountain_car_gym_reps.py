@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 import wandb
 from qreps.algorithms import REPS
 from qreps.feature_functions import NNFeatures
-from qreps.policies import CategoricalMLP, GaussianMLPStochasticPolicy
+from qreps.policies import CategoricalMLP
 from qreps.utilities.trainer import Trainer
 from qreps.valuefunctions import SimpleValueFunction
 
@@ -39,19 +39,20 @@ reps_config = {
 }
 
 timestamp = time.time()
-gym_env = gym.make("Pendulum-v0")
+gym_env = gym.make("MountainCar-v0")
 gym_env.seed(SEED)
-# gym_env = gym.wrappers.Monitor(gym_env, directory=f"./frozen_lake_{timestamp}")
+gym_env = gym.wrappers.Monitor(
+    gym_env, directory=f"./mount_car_{timestamp}", video_callable=lambda x: True
+)
 env = gym_wrapper.DMEnvFromGym(gym_env)
 
 num_obs = env.observation_spec().shape[0]
-print(env.action_spec())
 
 
 def train(config: dict):
     feature_fn = NNFeatures(num_obs, feat_dim=200)
     value_function = SimpleValueFunction(obs_dim=200, feature_fn=feature_fn)
-    policy = GaussianMLPStochasticPolicy(num_obs, 2)
+    policy = CategoricalMLP(num_obs, 2)
     writer = SummaryWriter()
 
     agent = REPS(writer=writer, policy=policy, value_function=value_function, **config)
@@ -65,7 +66,7 @@ wandb.init(
     project="qreps",
     entity="sebimarkgraf",
     sync_tensorboard=True,
-    tags=["pendulum", "reps"],
+    tags=["mountain_car", "reps"],
     job_type="hyperparam",
     config=reps_config,
 )

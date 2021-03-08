@@ -6,7 +6,7 @@ import logging
 
 import torch
 from bsuite.utils import gym_wrapper
-from gym.envs.toy_text import FrozenLakeEnv, NChainEnv
+from gym.envs.toy_text import FrozenLakeEnv
 from torch.utils.tensorboard import SummaryWriter
 
 import wandb
@@ -23,19 +23,19 @@ FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
-gym_env = NChainEnv(n=5)
+gym_env = FrozenLakeEnv()
 env = gym_wrapper.DMEnvFromGym(gym_env)
 obs_num = env.observation_spec().num_values
 act_num = env.action_spec().num_values
 
 
 qreps_config = {
-    "eta": 1.0,
+    "eta": 5.0,
     "beta": 0.05,
     "saddle_point_steps": 300,
     "policy_opt_steps": 300,
     "policy_lr": 0.04,
-    "discount": 0.99,
+    "discount": 1.0,
     "grad_samples": 5,
 }
 
@@ -63,7 +63,7 @@ def train(config: dict):
 
     trainer = Trainer()
     trainer.setup(agent, env)
-    trainer.train(num_iterations=10, max_steps=200, number_rollouts=1)
+    trainer.train(num_iterations=10, max_steps=30, number_rollouts=20)
 
     print("Policy", policy._policy)
 
@@ -72,7 +72,7 @@ wandb.init(
     project="qreps",
     entity="sebimarkgraf",
     sync_tensorboard=True,
-    tags=["chain_hyperparam", "qreps"],
+    tags=["frozen_lake", "qreps "],
     job_type="hyperparam",
     config=qreps_config,
 )

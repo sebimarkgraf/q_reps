@@ -13,11 +13,11 @@ class BestResponseSampler(AbstractSampler):
 
     def __init__(self, *args, **kwargs):
         super(BestResponseSampler, self).__init__(*args, **kwargs)
-        self.log_dist = torch.zeros((self.length,))
+        self.dist = torch.softmax(torch.ones((self.length,)), 0)
 
     def get_next_distribution(self, bellman):
-        self.log_dist = self.eta * bellman
-        return torch.distributions.Categorical(logits=self.log_dist)
+        self.dist = torch.softmax(self.eta * bellman, 0)
+        return torch.distributions.Categorical(self.dist)
 
     def get_distribution(self):
-        return torch.distributions.Categorical(logits=self.log_dist)
+        return torch.distributions.Categorical(self.dist)

@@ -20,7 +20,7 @@ class ReplayBuffer(object):
             (
                 new_timestep.observation,
                 action,
-                new_timestep.reward,
+                new_timestep.discount * new_timestep.reward,
                 new_timestep.discount,
                 timestep.observation,
             )

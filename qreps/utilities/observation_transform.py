@@ -1,12 +1,18 @@
 import dm_env
 import numpy as np
+from torch import Tensor
 
 from qreps.algorithms import AbstractAlgorithm
 
 
 class OrderedDictFlattenTransform(AbstractAlgorithm):
-    def __init__(self, agent: AbstractAlgorithm, identifiers: list):
-        super().__init__()
+    def calc_weights(
+        self, features: Tensor, features_next: Tensor, rewards: Tensor, actions: Tensor
+    ) -> Tensor:
+        self._agent.calc_weights(features, features_next, rewards, actions)
+
+    def __init__(self, agent: AbstractAlgorithm, identifiers: list, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._agent = agent
         self.identifiers = identifiers
 

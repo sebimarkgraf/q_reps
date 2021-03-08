@@ -6,7 +6,7 @@ from torch import Tensor
 from typing_extensions import Type
 
 from qreps.algorithms.sampler import AbstractSampler, ExponentitedGradientSampler
-from qreps.utilities.elbe import empirical_bellman_error
+from qreps.utilities.elbe import empirical_bellman_error, empirical_logistic_bellman
 from qreps.valuefunctions import IntegratedQFunction, SimpleQFunction
 
 from .abstract_algorithm import AbstractAlgorithm
@@ -92,9 +92,9 @@ class QREPS(AbstractAlgorithm):
     def g_hat(
         self, x_1: torch.Tensor, a_1: torch.Tensor, x: torch.Tensor, a: torch.Tensor
     ):
-        return self.discount * self.q_function.features(
-            x_1, a_1
-        ) - self.q_function.features(x, a)
+        features_1 = self.q_function.features(x_1, a_1)
+        features = self.q_function.features(x, a)
+        return self.discount * features_1 - features
 
     def theta_policy(self, x):
         distribution = self.policy.distribution(x)
@@ -131,7 +131,6 @@ class QREPS(AbstractAlgorithm):
             # Learner
             self.theta_opt.zero_grad()
             grad = torch.zeros(self.q_function.model.weight.shape)
-
             for i in range(self.grad_samples):
                 sample_index = z_dist.sample((1,)).item()
                 x, a, x1 = (
@@ -145,6 +144,8 @@ class QREPS(AbstractAlgorithm):
             self.q_function.model.weight.backward(grad)
 
             # loss = self.S_k(z_dist, N, features, features_next, actions, rewards)
+            # loss.backward()
+
             # loss = empirical_logistic_bellman(self.eta, features, features_next, actions, rewards, self.q_function, self.value_function, self.discount)
             # loss.backward()
             self.theta_opt.step()
@@ -168,7 +169,16 @@ class QREPS(AbstractAlgorithm):
             with torch.no_grad():
                 self.q_function.model.weight.data = torch.mean(theta_hist, 0).detach()
 
-        return self.S_k(z_dist, N, features, features_next, actions, rewards)
+        return empirical_logistic_bellman(
+            self.eta,
+            features,
+            features_next,
+            actions,
+            rewards,
+            self.q_function,
+            self.value_function,
+            self.discount,
+        )
 
     def S_k(self, z, N, features, features_next, actions, rewards):
         bellman_error = empirical_bellman_error(
@@ -182,9 +192,9 @@ class QREPS(AbstractAlgorithm):
         )
         loss = torch.sum(
             z.probs.detach()
-            * (bellman_error - (math.log(N) * z.probs.detach()) / self.eta)
+            * (bellman_error - (torch.log(N * z.probs.detach())) / self.eta)
+            + (1 - self.discount) * self.value_function(features)
         )
-        # + (1 - self.discount) * self.value_function(features))
         return loss
 
     def calc_weights(
@@ -236,3 +246,16 @@ class QREPS(AbstractAlgorithm):
         )
         if self.writer is not None:
             self.writer.add_scalar("train/qreps_loss", qreps_loss, iteration)
+            self.writer.add_scalar(
+                "train/q_values",
+                self.q_function(observations, actions).mean(0),
+                iteration,
+            )
+            self.writer.add_scalar(
+                "train/next_v_function",
+                self.value_function(next_observations).mean(0),
+                iteration,
+            )
+            self.writer.add_histogram(
+                "train/q_weights", self.q_function.model.weight.data, iteration
+            )

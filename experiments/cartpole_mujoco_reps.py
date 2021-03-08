@@ -42,21 +42,16 @@ def train(config: dict):
 
     value_function = NNValueFunction(obs_dim=5)
 
-    agent = OrderedDictFlattenTransform(
-        REPS(
-            batch_size=500,
-            policy=policy,
-            value_function=value_function,
-            entropy_constrained=False,
-            discount=config["gamma"],
-            eta=config["eta"],
-            dual_lr=config["dual_lr"],
-            lr=config["lr"],
-            writer=writer,
-            dual_opt_steps=config["dual_opt_steps"],
-            pol_opt_steps=config["pol_opt_steps"],
-        ),
-        ["observations"],
+    agent = REPS(
+        policy=policy,
+        value_function=value_function,
+        entropy_constrained=False,
+        discount=config["gamma"],
+        eta=config["eta"],
+        dual_lr=config["dual_lr"],
+        policy_lr=config["lr"],
+        writer=writer,
+        dual_opt_steps=config["dual_opt_steps"],
     )
 
     trainer = Trainer()
@@ -67,10 +62,6 @@ def train(config: dict):
         number_rollouts=config["num_rollouts"],
     )
     policy.set_eval_mode(True)
-    val_reward = trainer.validate(5, 500)
-
-    tune.report(reward=torch.sum(torch.tensor(val_reward)).item())
-
     return agent
 
 
