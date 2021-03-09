@@ -90,11 +90,20 @@ class QREPS(AbstractAlgorithm):
         self.grad_samples = grad_samples
 
     def g_hat(
-        self, x_1: torch.Tensor, a_1: torch.Tensor, x: torch.Tensor, a: torch.Tensor
+        self,
+        x_1: torch.Tensor,
+        a_1: torch.Tensor,
+        x: torch.Tensor,
+        a: torch.Tensor,
+        x0,
+        a0,
     ):
         features_1 = self.q_function.features(x_1, a_1)
         features = self.q_function.features(x, a)
-        return self.discount * features_1 - features
+        # features_0 = self.q_function.features(x0, a0)
+        return (
+            self.discount * features_1 - features
+        )  # + (1 - self.discount) * features_0
 
     def theta_policy(self, x):
         distribution = self.policy.distribution(x)
@@ -139,7 +148,8 @@ class QREPS(AbstractAlgorithm):
                     features_next[sample_index].view(1, -1),
                 )
                 a1 = self.theta_policy(x1).view(1, -1)
-                grad += self.g_hat(x1, a1, x, a)
+                x0, a0 = features[0].view(1, -1), actions[0].view(1, -1)
+                grad += self.g_hat(x1, a1, x, a, x0, a0)
             grad /= self.grad_samples
             self.q_function.model.weight.backward(grad)
 

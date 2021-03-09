@@ -30,7 +30,7 @@ np.random.seed(SEED)
 
 reps_config = {
     "discount": 0.99,
-    "eta": 0.4515,
+    "eta": 0.001,
     "dual_lr": 2e-2,
     "policy_lr": 2e-5,
     "entropy_constrained": False,
@@ -59,7 +59,7 @@ def train(config: dict):
 
     trainer = Trainer()
     trainer.setup(agent, env)
-    trainer.train(num_iterations=30, max_steps=200, number_rollouts=5)
+    trainer.train(num_iterations=30, max_steps=200, number_rollouts=20)
 
 
 wandb.init(

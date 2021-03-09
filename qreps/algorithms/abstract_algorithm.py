@@ -160,7 +160,6 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
 
     def nll_loss(self, observations, next_observations, rewards, actions):
         weights = self.calc_weights(observations, next_observations, rewards, actions)
-        weights = weights - torch.max(weights)
         log_likes = self.policy.log_likelihood(observations, actions)
         nll = torch.exp(weights.detach()) * log_likes
         return -torch.mean(nll)

@@ -29,23 +29,14 @@ torch.manual_seed(SEED)
 np.random.seed(SEED)
 
 qreps_config = {
-    "eta": 0.01,
+    "eta": 1.0,
     "beta": 0.08,
     "saddle_point_steps": 300,
     "policy_opt_steps": 300,
     "policy_lr": 2e-5,
     "discount": 0.99,
     "average_weights": True,
-    "grad_samples": 10,
-}
-
-qreps_config_test = {
-    "beta": 0.08557,
-    "discount": 0.99,
-    "eta": 1,
-    "policy_lr": 0.002,
-    "policy_opt_steps": 450,
-    "saddle_point_steps": 300,
+    "grad_samples": 1,
 }
 
 timestamp = time.time()
@@ -76,6 +67,7 @@ def train(config: dict):
         q_function=q_function,
         learner=torch.optim.Adam,
         sampler=BestResponseSampler,
+        reward_transformer=lambda r: r / 1000,
         **config,
     )
 

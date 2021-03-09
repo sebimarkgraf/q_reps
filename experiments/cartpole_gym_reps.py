@@ -53,7 +53,13 @@ def train(config: dict):
     policy = CategoricalMLP(num_obs, 2)
     writer = SummaryWriter()
 
-    agent = REPS(writer=writer, policy=policy, value_function=value_function, **config)
+    agent = REPS(
+        reward_transformer=lambda r: r / 1000,
+        writer=writer,
+        policy=policy,
+        value_function=value_function,
+        **config
+    )
 
     trainer = Trainer()
     trainer.setup(agent, env)

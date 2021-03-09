@@ -16,7 +16,8 @@ class BestResponseSampler(AbstractSampler):
         self.dist = torch.softmax(torch.ones((self.length,)), 0)
 
     def get_next_distribution(self, bellman):
-        self.dist = torch.softmax(self.eta * bellman, 0)
+        self.dist = torch.exp(self.eta * bellman)
+        self.dist = self.dist / torch.sum(self.dist)
         return torch.distributions.Categorical(self.dist)
 
     def get_distribution(self):
