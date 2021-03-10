@@ -1,5 +1,7 @@
+import random
 from typing import Callable
 
+import numpy as np
 import torch
 
 
@@ -60,3 +62,12 @@ def torch_batched(x: torch.Tensor):
         return x.view(-1, 1)
 
     return x.view(-1, x.shape[0])
+
+
+def set_seed(seed):
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)

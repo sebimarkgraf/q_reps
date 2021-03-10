@@ -4,23 +4,18 @@ import time
 import gym
 import torch
 
-from qreps.algorithms.sampler import BestResponseSampler
-
 sys.path.append("../")
-import numpy as np
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
 
 import wandb
 from qreps.algorithms import QREPS, REPS
+from qreps.algorithms.sampler import BestResponseSampler
 from qreps.feature_functions import FeatureConcatenation, NNFeatures, OneHotFeature
 from qreps.policies import CategoricalMLP
 from qreps.utilities.trainer import Trainer
+from qreps.utilities.util import set_seed
 from qreps.valuefunctions import SimpleQFunction, SimpleValueFunction
-
-SEED = 1234
-torch.manual_seed(SEED)
-np.random.seed(SEED)
 
 reps_config = {
     "discount": 0.99,
@@ -32,18 +27,19 @@ reps_config = {
     "policy_opt_steps": 300,
 }
 
-
 qreps_config = {
-    "eta": 0.01,
-    "beta": 0.08,
+    "eta": 4.8414649407540935,
+    "beta": 0.02213703016509175,
     "saddle_point_steps": 300,
-    "policy_opt_steps": 600,
-    "policy_lr": 2e-2,
+    "policy_opt_steps": 450,
+    "policy_lr": 0.00002,
     "discount": 0.99,
+    "average_weights": True,
+    "grad_samples": 5,
 }
 
 
-def create_env(seed=SEED):
+def create_env(seed):
     gym_env = gym.make("CartPole-v0")
     gym_env.seed(seed)
     env = gym_wrapper.DMEnvFromGym(gym_env)
@@ -62,7 +58,11 @@ def create_agent(algo, writer, config, num_obs, num_act):
             obs_dim=FEAT_DIM, feature_fn=obs_feature_fn
         )
         return REPS(
-            policy=policy, value_function=value_function, writer=writer, **config
+            policy=policy,
+            value_function=value_function,
+            writer=writer,
+            reward_transformer=lambda r: r / 1000,
+            **config,
         )
     elif algo == "qreps":
         feature_fn = FeatureConcatenation(
@@ -79,6 +79,7 @@ def create_agent(algo, writer, config, num_obs, num_act):
             q_function=q_function,
             learner=torch.optim.Adam,
             sampler=BestResponseSampler,
+            reward_transformer=lambda r: r / 1000,
             **config,
         )
 
@@ -92,7 +93,9 @@ def evaluate(agent, env):
 def main():
     timestamp = time.time()
     for algo in ["reps", "qreps"]:
-        for it in range(10):
+        for it in range(1):
+            SEED = 1234
+            set_seed(SEED)
             print(f"Runing {algo}")
             config = reps_config if algo == "reps" else qreps_config
             wandb.init(
@@ -104,7 +107,7 @@ def main():
                 config=config,
             )
             writer = SummaryWriter()
-            env, num_obs, num_act = create_env()
+            env, num_obs, num_act = create_env(seed=SEED)
             agent = create_agent(algo, writer, config, num_obs, num_act)
             evaluate(agent, env)
             writer.close()

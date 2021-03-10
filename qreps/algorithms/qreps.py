@@ -100,10 +100,10 @@ class QREPS(AbstractAlgorithm):
     ):
         features_1 = self.q_function.features(x_1, a_1)
         features = self.q_function.features(x, a)
-        # features_0 = self.q_function.features(x0, a0)
-        return (
-            self.discount * features_1 - features
-        )  # + (1 - self.discount) * features_0
+        features_0 = self.q_function.features(x0, a0)
+        return (self.discount * features_1 - features) + (
+            1 - self.discount
+        ) * features_0
 
     def theta_policy(self, x):
         distribution = self.policy.distribution(x)

@@ -2,11 +2,11 @@ import logging
 import sys
 import time
 
+from qreps.utilities.util import set_seed
+
 sys.path.append("../")
 
 import gym
-import numpy as np
-import torch
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
 
@@ -25,8 +25,7 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 SEED = 1234
-torch.manual_seed(SEED)
-np.random.seed(SEED)
+set_seed(SEED)
 
 reps_config = {
     "discount": 0.99,

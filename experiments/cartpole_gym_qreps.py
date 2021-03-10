@@ -5,7 +5,6 @@ import time
 sys.path.append("../")
 
 import gym
-import numpy as np
 import torch
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
@@ -16,6 +15,7 @@ from qreps.algorithms.sampler import BestResponseSampler, ExponentitedGradientSa
 from qreps.feature_functions import FeatureConcatenation, NNFeatures, OneHotFeature
 from qreps.policies import CategoricalMLP
 from qreps.utilities.trainer import Trainer
+from qreps.utilities.util import set_seed
 from qreps.valuefunctions import SimpleQFunction
 
 for handler in logging.root.handlers[:]:
@@ -25,18 +25,17 @@ FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 SEED = 1234
-torch.manual_seed(SEED)
-np.random.seed(SEED)
+set_seed(SEED)
 
 qreps_config = {
-    "eta": 1.0,
-    "beta": 0.08,
+    "eta": 1.91,
+    "beta": 0.02766,
     "saddle_point_steps": 300,
-    "policy_opt_steps": 300,
-    "policy_lr": 2e-5,
+    "policy_opt_steps": 450,
+    "policy_lr": 0.00002,
     "discount": 0.99,
     "average_weights": True,
-    "grad_samples": 1,
+    "grad_samples": 5,
 }
 
 timestamp = time.time()
@@ -73,7 +72,7 @@ def train(config: dict):
 
     trainer = Trainer()
     trainer.setup(agent, env)
-    trainer.train(num_iterations=20, max_steps=200, number_rollouts=5)
+    trainer.train(num_iterations=30, max_steps=200, number_rollouts=5)
 
 
 wandb.init(
