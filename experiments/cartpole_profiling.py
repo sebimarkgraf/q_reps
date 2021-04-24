@@ -51,12 +51,10 @@ def create_env(seed):
 def create_agent(algo, writer, config, num_obs, num_act):
     policy = CategoricalMLP(obs_shape=num_obs, act_shape=num_act)
     FEAT_DIM = 200
-    obs_feature_fn = NNFeatures(num_obs, feat_dim=FEAT_DIM)
+    feature_fn = NNFeatures(num_obs, feat_dim=FEAT_DIM)
 
     if algo == "reps":
-        value_function = SimpleValueFunction(
-            obs_dim=FEAT_DIM, feature_fn=obs_feature_fn
-        )
+        value_function = SimpleValueFunction(obs_dim=FEAT_DIM, feature_fn=feature_fn)
         return REPS(
             policy=policy,
             value_function=value_function,
@@ -65,10 +63,6 @@ def create_agent(algo, writer, config, num_obs, num_act):
             **config,
         )
     elif algo == "qreps":
-        feature_fn = FeatureConcatenation(
-            obs_feature_fn=obs_feature_fn,
-            act_feature_fn=OneHotFeature(num_classes=num_act),
-        )
         q_function = SimpleQFunction(
             obs_dim=FEAT_DIM, act_dim=num_act, feature_fn=feature_fn,
         )

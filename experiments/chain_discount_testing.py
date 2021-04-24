@@ -46,18 +46,14 @@ reps_discounted_config = {
 def create_agent(algo, writer, config):
 
     policy = StochasticTablePolicy(obs_num, act_num)
+
+    feature_fn = OneHotFeature(obs_num)
     if algo == "reps":
-        value_function = SimpleValueFunction(
-            obs_dim=obs_num, feature_fn=OneHotFeature(obs_num)
-        )
+        value_function = SimpleValueFunction(obs_dim=obs_num, feature_fn=feature_fn)
         return REPS(
             writer=writer, policy=policy, value_function=value_function, **config
         )
     elif algo == "qreps":
-
-        feature_fn = FeatureConcatenation(
-            obs_feature_fn=OneHotFeature(obs_num), act_feature_fn=OneHotFeature(act_num)
-        )
         value_function = SimpleQFunction(
             obs_dim=obs_num, act_dim=act_num, feature_fn=feature_fn,
         )

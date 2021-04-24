@@ -1,6 +1,8 @@
 import sys
 import time
 
+from qreps.policies.qreps_policy import QREPSPolicy
+
 sys.path.append("../")
 
 import torch
@@ -20,6 +22,7 @@ env = gym_wrapper.DMEnvFromGym(gym_env)
 obs_num = env.observation_spec().num_values
 act_num = env.action_spec().num_values
 
+NUM_ITERATIONS = 5
 
 reps_config = {
     "discount": 0.99,
@@ -55,12 +58,24 @@ def create_agent(algo, writer, config):
         )
     elif algo == "qreps":
 
-        feature_fn = FeatureConcatenation(
-            obs_feature_fn=OneHotFeature(obs_num), act_feature_fn=OneHotFeature(act_num)
-        )
+        feature_fn = OneHotFeature(obs_num)
         value_function = SimpleQFunction(
             obs_dim=obs_num, act_dim=act_num, feature_fn=feature_fn,
         )
+        return QREPS(
+            writer=writer,
+            policy=policy,
+            q_function=value_function,
+            learner=torch.optim.SGD,
+            **config,
+        )
+    elif algo == "qreps_nonparametric":
+
+        feature_fn = OneHotFeature(obs_num)
+        value_function = SimpleQFunction(
+            obs_dim=obs_num, act_dim=act_num, feature_fn=feature_fn,
+        )
+        policy = QREPSPolicy(q_function=value_function)
         return QREPS(
             writer=writer,
             policy=policy,
@@ -78,8 +93,8 @@ def evaluate(agent):
 
 def main():
     timestamp = time.time()
-    for algo in ["reps", "qreps"]:
-        for it in range(10):
+    for algo in ["reps", "qreps", "qreps_nonparametric"]:
+        for it in range(NUM_ITERATIONS):
             print(f"Runing {algo}")
             config = reps_config if algo == "reps" else qreps_config
             wandb.init(

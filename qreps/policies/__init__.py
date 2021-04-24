@@ -1,4 +1,3 @@
-from .abstract_q_policy import *
 from .categorical_mlp import *
 from .direct_set_policy import *
 from .gaussian_mlp import *

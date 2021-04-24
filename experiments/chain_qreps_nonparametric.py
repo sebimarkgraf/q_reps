@@ -1,5 +1,7 @@
 import sys
 
+from qreps.policies.qreps_policy import QREPSPolicy
+
 sys.path.append("../")
 
 import logging
@@ -47,7 +49,8 @@ def train(config: dict):
         obs_dim=obs_num, act_dim=act_num, feature_fn=feature_fn,
     )
 
-    policy = StochasticTablePolicy(obs_num, act_num)
+    temp = config["eta"]
+    policy = QREPSPolicy(q_function=value_function, temp=temp)
 
     writer = SummaryWriter()
 
@@ -56,6 +59,7 @@ def train(config: dict):
         policy=policy,
         q_function=value_function,
         learner=torch.optim.SGD,
+        optimize_policy=False,
         **config
     )
 
@@ -63,15 +67,13 @@ def train(config: dict):
     trainer.setup(agent, env)
     trainer.train(num_iterations=10, max_steps=200, number_rollouts=1)
 
-    print("Policy", policy._policy)
-
 
 wandb.init(
     project="qreps",
     entity="sebimarkgraf",
     sync_tensorboard=True,
-    tags=["chain_hyperparam", "qreps"],
-    job_type="hyperparam",
+    tags=["chain", "qreps_nonparametric"],
+    job_type="experiment",
     config=qreps_config,
 )
 train(wandb.config)

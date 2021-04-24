@@ -50,12 +50,11 @@ print(env.observation_spec())
 
 
 def train(config: dict):
-    feature_fn = FeatureConcatenation(
-        obs_feature_fn=NNFeatures(num_obs, feat_dim=200),
-        act_feature_fn=OneHotFeature(num_classes=num_act),
-    )
+    obs_feature_fn = NNFeatures(num_obs, feat_dim=200)
 
-    q_function = SimpleQFunction(obs_dim=200, act_dim=num_act, feature_fn=feature_fn)
+    q_function = SimpleQFunction(
+        obs_dim=200, act_dim=num_act, feature_fn=obs_feature_fn
+    )
     policy = CategoricalMLP(num_obs, 2)
 
     writer = SummaryWriter()
