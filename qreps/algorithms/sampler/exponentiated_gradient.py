@@ -3,9 +3,9 @@ import torch
 from qreps.algorithms.sampler.abstract_sampler import AbstractSampler
 
 
-class ExponentitedGradientSampler(AbstractSampler):
+class ExponentiatedGradientSampler(AbstractSampler):
     def __init__(self, beta=0.1, *args, **kwargs):
-        super(ExponentitedGradientSampler, self).__init__(*args, **kwargs)
+        super(ExponentiatedGradientSampler, self).__init__(*args, **kwargs)
         self.beta = beta
         self.h = torch.ones((self.length,))
         self.z = torch.ones((self.length,))

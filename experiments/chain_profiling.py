@@ -75,7 +75,7 @@ def create_agent(algo, writer, config):
         value_function = SimpleQFunction(
             obs_dim=obs_num, act_dim=act_num, feature_fn=feature_fn,
         )
-        policy = QREPSPolicy(q_function=value_function)
+        policy = QREPSPolicy(q_function=value_function, temp=qreps_config["eta"])
         return QREPS(
             writer=writer,
             policy=policy,

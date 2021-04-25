@@ -30,13 +30,12 @@ act_num = env.action_spec().num_values
 
 
 qreps_config = {
-    "eta": 1.0,
+    "eta": 10.0,
     "beta": 0.05,
     "saddle_point_steps": 300,
     "policy_opt_steps": 300,
     "policy_lr": 0.04,
     "discount": 0.99,
-    "grad_samples": 5,
 }
 
 

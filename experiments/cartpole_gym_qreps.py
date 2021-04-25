@@ -11,12 +11,17 @@ from torch.utils.tensorboard import SummaryWriter
 
 import wandb
 from qreps.algorithms import QREPS
-from qreps.algorithms.sampler import BestResponseSampler, ExponentitedGradientSampler
-from qreps.feature_functions import FeatureConcatenation, NNFeatures, OneHotFeature
+from qreps.algorithms.sampler import BestResponseSampler, ExponentiatedGradientSampler
+from qreps.feature_functions import (
+    FeatureConcatenation,
+    IdentityFeature,
+    NNFeatures,
+    OneHotFeature,
+)
 from qreps.policies import CategoricalMLP
 from qreps.utilities.trainer import Trainer
 from qreps.utilities.util import set_seed
-from qreps.valuefunctions import SimpleQFunction
+from qreps.valuefunctions import NNQFunction, SimpleQFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -28,14 +33,12 @@ SEED = 1234
 set_seed(SEED)
 
 qreps_config = {
-    "eta": 1.91,
-    "beta": 0.02766,
+    "eta": 0.45,
+    "beta": 2e-2,
     "saddle_point_steps": 300,
     "policy_opt_steps": 450,
-    "policy_lr": 0.00002,
+    "policy_lr": 2e-5,
     "discount": 0.99,
-    "average_weights": True,
-    "grad_samples": 5,
 }
 
 timestamp = time.time()
@@ -50,10 +53,9 @@ print(env.observation_spec())
 
 
 def train(config: dict):
-    obs_feature_fn = NNFeatures(num_obs, feat_dim=200)
 
-    q_function = SimpleQFunction(
-        obs_dim=200, act_dim=num_act, feature_fn=obs_feature_fn
+    q_function = NNQFunction(
+        obs_dim=num_obs, act_dim=num_act, feature_fn=IdentityFeature()
     )
     policy = CategoricalMLP(num_obs, 2)
 

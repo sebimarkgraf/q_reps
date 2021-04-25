@@ -48,8 +48,13 @@ class NNQFunction(AbstractQFunction):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._model = nn.Sequential(
-            nn.Linear(self.n_obs, 128), nn.ReLU(), nn.Linear(128, self.n_action)
+            nn.Linear(self.n_obs, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, self.n_action),
         )
 
+    @property
     def model(self):
         return self._model

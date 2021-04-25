@@ -6,16 +6,17 @@ from torch import Tensor
 from typing_extensions import Type
 
 from qreps.algorithms.sampler import AbstractSampler, ExponentiatedGradientSampler
-from qreps.utilities.elbe import empirical_logistic_bellman
+from qreps.utilities.elbe import empirical_bellman_error
 from qreps.valuefunctions import IntegratedQFunction, SimpleQFunction
 
+from ..valuefunctions.AccumulativeModule import AccumulativeModule
 from .abstract_algorithm import AbstractAlgorithm
 
 logger = logging.getLogger("qreps")
 logger.addHandler(logging.NullHandler())
 
 
-class QREPS(AbstractAlgorithm):
+class SaddleQREPS(AbstractAlgorithm):
     r"""Logistic Q-Learning Algorithm.
 
         Logistic Q-Learning optimizes a linear program of the optimal policy but uses p = d as trick to naturally
@@ -75,7 +76,7 @@ class QREPS(AbstractAlgorithm):
         self.saddle_point_steps = saddle_point_steps
         self.eta = eta
         self.alpha = alpha if alpha is not None else eta
-        self.q_function = q_function
+        self.q_function = AccumulativeModule(q_function)
         self.value_function = IntegratedQFunction(self.q_function, alpha=self.alpha)
         self.theta_opt = learner(self.q_function.parameters(), lr=beta)
 
@@ -97,17 +98,32 @@ class QREPS(AbstractAlgorithm):
         """
         return self.alpha * self.q_function(features, actions)
 
-    def dual(self, observations, next_observations, rewards, actions):
-        return empirical_logistic_bellman(
-            self.eta,
-            observations,
-            next_observations,
-            actions,
-            rewards,
-            self.q_function,
-            self.value_function,
-            discount=self.discount,
-        )
+    def saddle_point_optimization(
+        self, observations, next_observations, rewards, actions
+    ):
+        N = observations.shape[0]
+        sampler = self.sampler(length=N, eta=self.eta, *self.sampler_args)
+        z = sampler.get_distribution()
+        for i in range(self.saddle_point_steps):
+            self.theta_opt.zero_grad()
+            bellman = empirical_bellman_error(
+                observations,
+                next_observations,
+                actions,
+                rewards,
+                q_func=self.q_function,
+                v_func=self.value_function,
+                discount=self.discount,
+            )
+            S_k = torch.sum(
+                z.probs * (bellman - 1 / self.eta * torch.log(N * z.probs))
+            ) + torch.mean((1 - self.discount) * self.value_function(observations), 0)
+            S_k.backward()
+            self.theta_opt.step()
+            with torch.no_grad():
+                z = sampler.get_next_distribution(bellman.detach())
+
+        return S_k
 
     def update_policy(self, iteration):
         (
@@ -121,8 +137,11 @@ class QREPS(AbstractAlgorithm):
         rewards = self.get_rewards(rewards)
         dist_before = self.policy.distribution(observations)
 
-        self.optimize_loss(self.dual, optimizer=self.theta_opt)
-        qreps_loss = self.dual(observations, next_observations, rewards, actions)
+        qreps_loss = self.saddle_point_optimization(
+            observations, next_observations, rewards, actions
+        )
+        if hasattr(self.q_function, "reset"):
+            self.q_function.reset()
 
         if self.optimize_policy is True:
             self.optimize_loss(
@@ -152,4 +171,7 @@ class QREPS(AbstractAlgorithm):
                 "train/next_v_function",
                 self.value_function(next_observations).mean(0),
                 iteration,
+            )
+            self.writer.add_histogram(
+                "train/q_weights", self.q_function.model.weight.data, iteration
             )

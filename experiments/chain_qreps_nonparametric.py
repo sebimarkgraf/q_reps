@@ -1,6 +1,8 @@
 import sys
 
+from qreps.algorithms.saddle_qreps import SaddleQREPS
 from qreps.policies.qreps_policy import QREPSPolicy
+from qreps.valuefunctions.AccumulativeModule import AccumulativeModule
 
 sys.path.append("../")
 
@@ -36,17 +38,16 @@ qreps_config = {
     "beta": 0.05,
     "saddle_point_steps": 300,
     "policy_opt_steps": 300,
-    "policy_lr": 0.04,
     "discount": 0.99,
-    "grad_samples": 5,
+    "optimize_policy": False,
 }
 
 
 def train(config: dict):
     feature_fn = OneHotFeature(obs_num)
 
-    value_function = SimpleQFunction(
-        obs_dim=obs_num, act_dim=act_num, feature_fn=feature_fn,
+    value_function = AccumulativeModule(
+        SimpleQFunction(obs_dim=obs_num, act_dim=act_num, feature_fn=feature_fn,)
     )
 
     temp = config["eta"]
@@ -65,7 +66,7 @@ def train(config: dict):
 
     trainer = Trainer()
     trainer.setup(agent, env)
-    trainer.train(num_iterations=10, max_steps=200, number_rollouts=1)
+    trainer.train(num_iterations=30, max_steps=200, number_rollouts=1)
 
 
 wandb.init(
