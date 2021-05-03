@@ -10,13 +10,12 @@ import logging
 
 import torch
 from bsuite.utils import gym_wrapper
-from gym.envs.toy_text import FrozenLakeEnv, NChainEnv
+from gym.envs.toy_text import NChainEnv
 from torch.utils.tensorboard import SummaryWriter
 
 import wandb
 from qreps.algorithms import QREPS
-from qreps.feature_functions import FeatureConcatenation, OneHotFeature
-from qreps.policies import StochasticTablePolicy
+from qreps.feature_functions import OneHotFeature
 from qreps.utilities.trainer import Trainer
 from qreps.valuefunctions import SimpleQFunction
 
@@ -55,12 +54,11 @@ def train(config: dict):
 
     writer = SummaryWriter()
 
-    agent = QREPS(
+    agent = SaddleQREPS(
         writer=writer,
         policy=policy,
         q_function=value_function,
         learner=torch.optim.SGD,
-        optimize_policy=False,
         **config
     )
 

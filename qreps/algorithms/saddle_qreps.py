@@ -96,7 +96,7 @@ class SaddleQREPS(AbstractAlgorithm):
         @param rewards: undiscounted rewards received in the states [N]
         @return: Tuple of the weights, calculated advantages
         """
-        return self.alpha * self.q_function(features, actions)
+        return torch.clamp(self.alpha * self.q_function(features, actions), -50, 50)
 
     def saddle_point_optimization(
         self, observations, next_observations, rewards, actions
@@ -116,8 +116,10 @@ class SaddleQREPS(AbstractAlgorithm):
                 discount=self.discount,
             )
             S_k = torch.sum(
-                z.probs * (bellman - 1 / self.eta * torch.log(N * z.probs))
-            ) + torch.mean((1 - self.discount) * self.value_function(observations), 0)
+                z.probs.detach()
+                * (bellman - 1 / self.eta * torch.log(N * z.probs.detach()))
+                + (1 - self.discount) * self.value_function(observations)
+            )
             S_k.backward()
             self.theta_opt.step()
             with torch.no_grad():

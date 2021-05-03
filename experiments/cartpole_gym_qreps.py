@@ -29,11 +29,11 @@ for handler in logging.root.handlers[:]:
 FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-SEED = 1234
+SEED = 12
 set_seed(SEED)
 
 qreps_config = {
-    "eta": 0.45,
+    "eta": 0.1,
     "beta": 2e-2,
     "saddle_point_steps": 300,
     "policy_opt_steps": 450,

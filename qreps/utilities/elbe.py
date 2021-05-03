@@ -21,8 +21,9 @@ def empirical_bellman_error(
 def empirical_logistic_bellman(
     eta, features, features_next, actions, rewards, q_func, v_func, discount
 ):
-    errors = 1 / eta * logmeanexp(
-        empirical_bellman_error(
+    errors = 1 / eta * torch.logsumexp(
+        eta
+        * empirical_bellman_error(
             features, features_next, actions, rewards, q_func, v_func, discount
         ),
         0,

@@ -80,8 +80,6 @@ class QREPS(AbstractAlgorithm):
         self.theta_opt = learner(self.q_function.parameters(), lr=beta)
 
         self.optimize_policy = optimize_policy
-        self.sampler = sampler
-        self.sampler_args = sampler_args if sampler_args is not None else {}
 
     def calc_weights(
         self, features: Tensor, features_next: Tensor, rewards: Tensor, actions: Tensor
@@ -95,17 +93,18 @@ class QREPS(AbstractAlgorithm):
         @param rewards: undiscounted rewards received in the states [N]
         @return: Tuple of the weights, calculated advantages
         """
-        return self.alpha * self.q_function(features, actions)
+        # Clamping added for stability. Could potentially blow up the policy otherwise
+        return torch.clamp(self.alpha * self.q_function(features, actions), -20, 20)
 
     def dual(self, observations, next_observations, rewards, actions):
         return empirical_logistic_bellman(
-            self.eta,
-            observations,
-            next_observations,
-            actions,
-            rewards,
-            self.q_function,
-            self.value_function,
+            eta=self.eta,
+            features=observations,
+            features_next=next_observations,
+            actions=actions,
+            rewards=rewards,
+            q_func=self.q_function,
+            v_func=self.value_function,
             discount=self.discount,
         )
 
