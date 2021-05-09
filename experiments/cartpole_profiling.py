@@ -4,6 +4,8 @@ import time
 import gym
 import torch
 
+from qreps.policies.qreps_policy import QREPSPolicy
+
 sys.path.append("../")
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
@@ -28,14 +30,12 @@ reps_config = {
 }
 
 qreps_config = {
-    "eta": 4.8414649407540935,
-    "beta": 0.02213703016509175,
+    "eta": 0.5,
+    "beta": 2e-2,
     "saddle_point_steps": 300,
-    "policy_opt_steps": 450,
-    "policy_lr": 0.00002,
+    "policy_opt_steps": 300,
+    "policy_lr": 2e-5,
     "discount": 0.99,
-    "average_weights": True,
-    "grad_samples": 5,
 }
 
 
@@ -76,6 +76,22 @@ def create_agent(algo, writer, config, num_obs, num_act):
             reward_transformer=lambda r: r / 1000,
             **config,
         )
+    elif algo == "qreps_nonparametric":
+        q_function = SimpleQFunction(
+            obs_dim=FEAT_DIM, act_dim=num_act, feature_fn=feature_fn,
+        )
+        policy = QREPSPolicy(q_function=q_function, temp=config["eta"])
+
+        return QREPS(
+            writer=writer,
+            policy=policy,
+            q_function=q_function,
+            learner=torch.optim.Adam,
+            sampler=BestResponseSampler,
+            reward_transformer=lambda r: r / 1000,
+            optimize_policy=False,
+            **config,
+        )
 
 
 def evaluate(agent, env):
@@ -86,10 +102,9 @@ def evaluate(agent, env):
 
 def main():
     timestamp = time.time()
-    for algo in ["reps", "qreps"]:
-        for it in range(1):
-            SEED = 1234
-            set_seed(SEED)
+    for algo in ["reps", "qreps", "qreps_nonparametric"]:
+        for it in range(5):
+            set_seed(it)
             print(f"Runing {algo}")
             config = reps_config if algo == "reps" else qreps_config
             wandb.init(
@@ -101,7 +116,7 @@ def main():
                 config=config,
             )
             writer = SummaryWriter()
-            env, num_obs, num_act = create_env(seed=SEED)
+            env, num_obs, num_act = create_env(seed=it)
             agent = create_agent(algo, writer, config, num_obs, num_act)
             evaluate(agent, env)
             writer.close()

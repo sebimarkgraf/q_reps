@@ -4,6 +4,7 @@ import time
 
 sys.path.append("../")
 
+
 import gym
 import torch
 from bsuite.utils import gym_wrapper
@@ -13,7 +14,7 @@ import wandb
 from qreps.algorithms import QREPS
 from qreps.algorithms.sampler import BestResponseSampler
 from qreps.feature_functions import IdentityFeature
-from qreps.policies import CategoricalMLP
+from qreps.policies.qreps_policy import QREPSPolicy
 from qreps.utilities.trainer import Trainer
 from qreps.utilities.util import set_seed
 from qreps.valuefunctions import NNQFunction
@@ -24,20 +25,19 @@ for handler in logging.root.handlers[:]:
 FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-SEED = 12
+SEED = 24
 set_seed(SEED)
 
 qreps_config = {
     "eta": 0.1,
     "beta": 2e-2,
     "saddle_point_steps": 300,
-    "policy_opt_steps": 450,
-    "policy_lr": 2e-2,
     "discount": 0.99,
 }
 
 timestamp = time.time()
 gym_env = gym.make("CartPole-v0")
+gym_env.seed(SEED)
 # gym_env = gym.wrappers.Monitor(gym_env, directory=f"./frozen_lake_{timestamp}", video_callable=lambda x: True)
 
 env = gym_wrapper.DMEnvFromGym(gym_env)
@@ -51,7 +51,7 @@ def train(config: dict):
     q_function = NNQFunction(
         obs_dim=num_obs, act_dim=num_act, feature_fn=IdentityFeature()
     )
-    policy = CategoricalMLP(num_obs, 2)
+    policy = QREPSPolicy(q_function=q_function, temp=config["eta"])
 
     writer = SummaryWriter()
 
@@ -61,6 +61,7 @@ def train(config: dict):
         q_function=q_function,
         learner=torch.optim.Adam,
         sampler=BestResponseSampler,
+        optimize_policy=False,
         reward_transformer=lambda r: r / 1000,
         **config,
     )
@@ -74,7 +75,7 @@ wandb.init(
     project="qreps",
     entity="sebimarkgraf",
     sync_tensorboard=True,
-    tags=["cartpole_hyperparam", "qreps"],
+    tags=["cartpole", "qreps_nonparametric"],
     job_type="hyperparam",
     config=qreps_config,
     monitor_gym=True,
