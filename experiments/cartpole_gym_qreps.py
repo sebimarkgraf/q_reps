@@ -76,7 +76,13 @@ search_alg = HEBOSearch(metric="reward", mode="max")
 re_search_alg = Repeater(search_alg, repeat=5)
 
 # Repeat 2 samples 10 times each.
-analysis = tune.run(train, num_samples=5, config=config, search_alg=re_search_alg)
+analysis = tune.run(
+    train,
+    num_samples=5,
+    config=config,
+    search_alg=re_search_alg,
+    local_dir="/home/temp_store/seb_markgraf/qreps_results",
+)
 
 print("Best config: ", analysis.get_best_config(metric="reward", mode="max"))
 
