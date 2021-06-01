@@ -17,6 +17,7 @@ class Trainer:
     def _obtain_episode(self, max_steps):
         timestep = self.env.reset()
         step = 0
+        rewards = []
         while not timestep.last():
             # Generate an action from the agent's policy.
             action = self.algo.select_action(timestep)
@@ -30,9 +31,12 @@ class Trainer:
             # Tell the agent about what just happened.
             self.algo.update(timestep, action, new_timestep)
 
+            rewards.append(new_timestep.reward)
+
             # Book-keeping.
             timestep = new_timestep
             step += 1
+        return np.sum(rewards)
 
     def _validate_once(self, max_steps):
         timestep = self.env.reset()
@@ -56,7 +60,9 @@ class Trainer:
     def validate(self, num_validation, max_steps):
         return [self._validate_once(max_steps) for _ in range(num_validation)]
 
-    def train(self, num_iterations, max_steps, number_rollouts=1):
+    def train(
+        self, num_iterations, max_steps, number_rollouts=1, logging_callback=None
+    ):
         """Trains the set algorithm for num_episodes and limits the steps per episode on max_steps.
         Note that the episode is returned earlier if the environment switches to done"""
         if self.algo is None or self.env is None:
@@ -64,7 +70,9 @@ class Trainer:
 
         for iteration in range(num_iterations):
             for rollout in range(number_rollouts):
-                self._obtain_episode(max_steps)
+                reward = self._obtain_episode(max_steps)
+                if logging_callback is not None:
+                    logging_callback(reward)
 
             self.algo.update_policy(self.iter)
             # Count global iterations

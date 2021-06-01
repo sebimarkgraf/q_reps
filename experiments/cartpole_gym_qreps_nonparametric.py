@@ -13,11 +13,11 @@ from torch.utils.tensorboard import SummaryWriter
 import wandb
 from qreps.algorithms import QREPS
 from qreps.algorithms.sampler import BestResponseSampler
-from qreps.feature_functions import IdentityFeature
+from qreps.feature_functions import IdentityFeature, NNFeatures
 from qreps.policies.qreps_policy import QREPSPolicy
 from qreps.utilities.trainer import Trainer
 from qreps.utilities.util import set_seed
-from qreps.valuefunctions import NNQFunction
+from qreps.valuefunctions import NNQFunction, SimpleQFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -25,12 +25,13 @@ for handler in logging.root.handlers[:]:
 FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-SEED = 24
+SEED = 3
 set_seed(SEED)
 
 qreps_config = {
     "eta": 0.1,
-    "beta": 2e-2,
+    "beta": 0.1,
+    "alpha": 0.5,
     "saddle_point_steps": 300,
     "discount": 0.99,
 }
@@ -47,9 +48,10 @@ print(env.observation_spec())
 
 
 def train(config: dict):
-
-    q_function = NNQFunction(
-        obs_dim=num_obs, act_dim=num_act, feature_fn=IdentityFeature()
+    FEAT_DIM = 200
+    feature_fn = NNFeatures(num_obs, feat_dim=FEAT_DIM)
+    q_function = SimpleQFunction(
+        obs_dim=FEAT_DIM, act_dim=num_act, feature_fn=feature_fn
     )
     policy = QREPSPolicy(q_function=q_function, temp=config["eta"])
 
@@ -69,6 +71,7 @@ def train(config: dict):
     trainer = Trainer()
     trainer.setup(agent, env)
     trainer.train(num_iterations=30, max_steps=200, number_rollouts=5)
+    return trainer.validate(num_validation=5, max_steps=200)
 
 
 wandb.init(

@@ -33,8 +33,8 @@ act_num = env.action_spec().num_values
 
 
 qreps_config = {
-    "eta": 1.0,
-    "beta": 0.05,
+    "eta": 0.1,
+    "beta": 2e-2,
     "saddle_point_steps": 300,
     "policy_opt_steps": 300,
     "discount": 0.99,
@@ -45,8 +45,8 @@ qreps_config = {
 def train(config: dict):
     feature_fn = OneHotFeature(obs_num)
 
-    value_function = AccumulativeModule(
-        SimpleQFunction(obs_dim=obs_num, act_dim=act_num, feature_fn=feature_fn,)
+    value_function = SimpleQFunction(
+        obs_dim=obs_num, act_dim=act_num, feature_fn=feature_fn,
     )
 
     temp = config["eta"]
@@ -54,7 +54,7 @@ def train(config: dict):
 
     writer = SummaryWriter()
 
-    agent = SaddleQREPS(
+    agent = QREPS(
         writer=writer,
         policy=policy,
         q_function=value_function,

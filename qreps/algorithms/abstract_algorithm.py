@@ -33,6 +33,8 @@ class AbstractAlgorithm(nn.Module, metaclass=ABCMeta):
         policy_optimizer: Type[torch.optim.Optimizer] = torch.optim.Adam,
         policy_opt_steps=150,
         policy_lr=1e-2,
+        *args,
+        **kwargs,
     ):
         super().__init__()
         # Organizational setup

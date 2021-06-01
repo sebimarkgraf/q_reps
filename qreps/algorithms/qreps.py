@@ -50,8 +50,6 @@ class QREPS(AbstractAlgorithm):
         eta: float = 0.5,
         alpha: float = None,
         learner: Type[torch.optim.Optimizer] = torch.optim.SGD,
-        sampler: Type[AbstractSampler] = ExponentiatedGradientSampler,
-        sampler_args: dict = None,
         optimize_policy: bool = True,
         *args,
         **kwargs,
