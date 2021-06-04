@@ -1,4 +1,3 @@
-import argparse
 import logging
 import sys
 
@@ -16,11 +15,11 @@ from torch.utils.tensorboard import SummaryWriter
 
 from qreps.algorithms import QREPS
 from qreps.algorithms.sampler import BestResponseSampler
-from qreps.feature_functions import NNFeatures
+from qreps.feature_functions import IdentityFeature
 from qreps.policies.qreps_policy import QREPSPolicy
 from qreps.utilities.trainer import Trainer
 from qreps.utilities.util import set_seed
-from qreps.valuefunctions import SimpleQFunction
+from qreps.valuefunctions import NNQFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -49,10 +48,8 @@ def train(config: dict):
     env = gym_wrapper.DMEnvFromGym(gym_env)
     num_obs = env.observation_spec().shape[0]
     num_act = env.action_spec().num_values
-    FEAT_DIM = 200
-    feature_fn = NNFeatures(num_obs, feat_dim=FEAT_DIM)
-    q_function = SimpleQFunction(
-        obs_dim=FEAT_DIM, act_dim=num_act, feature_fn=feature_fn
+    q_function = NNQFunction(
+        obs_dim=num_obs, act_dim=num_act, feature_fn=IdentityFeature()
     )
     policy = QREPSPolicy(q_function=q_function, temp=config["eta"])
 
@@ -85,10 +82,10 @@ re_search_alg = Repeater(search_alg, repeat=5)
 # Repeat 2 samples 10 times each.
 analysis = tune.run(
     train,
-    num_samples=5,
+    num_samples=500,
     config=config,
     search_alg=re_search_alg,
-    local_dir="/home/temp_store/seb_markgraf/qreps_results",
+    local_dir="/home/temp_store/seb_markgraf/qreps_nonparametric_results",
 )
 
 print("Best config: ", analysis.get_best_config(metric="reward", mode="max"))
