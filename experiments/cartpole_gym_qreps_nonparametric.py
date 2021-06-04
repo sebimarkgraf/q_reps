@@ -1,6 +1,10 @@
+import argparse
 import logging
 import sys
-import time
+
+from ray import tune
+from ray.tune.suggest import Repeater
+from ray.tune.suggest.hebo import HEBOSearch
 
 sys.path.append("../")
 
@@ -10,14 +14,13 @@ import torch
 from bsuite.utils import gym_wrapper
 from torch.utils.tensorboard import SummaryWriter
 
-import wandb
 from qreps.algorithms import QREPS
 from qreps.algorithms.sampler import BestResponseSampler
-from qreps.feature_functions import IdentityFeature, NNFeatures
+from qreps.feature_functions import NNFeatures
 from qreps.policies.qreps_policy import QREPSPolicy
 from qreps.utilities.trainer import Trainer
 from qreps.utilities.util import set_seed
-from qreps.valuefunctions import NNQFunction, SimpleQFunction
+from qreps.valuefunctions import SimpleQFunction
 
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -25,29 +28,27 @@ for handler in logging.root.handlers[:]:
 FORMAT = "[%(asctime)s]: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-SEED = 3
-set_seed(SEED)
+SEED_OFFSET = 0
 
-qreps_config = {
-    "eta": 0.1,
-    "beta": 0.1,
-    "alpha": 0.5,
-    "saddle_point_steps": 300,
+config = {
+    "eta": tune.loguniform(2e-3, 2e-1),
+    "alpha": tune.loguniform(2e-3, 2e-1),
+    "beta": tune.loguniform(2e-4, 2e-1),
+    "saddle_point_steps": tune.choice([300, 450]),
     "discount": 0.99,
 }
 
-timestamp = time.time()
-gym_env = gym.make("CartPole-v0")
-gym_env.seed(SEED)
-# gym_env = gym.wrappers.Monitor(gym_env, directory=f"./frozen_lake_{timestamp}", video_callable=lambda x: True)
-
-env = gym_wrapper.DMEnvFromGym(gym_env)
-num_obs = env.observation_spec().shape[0]
-num_act = env.action_spec().num_values
-print(env.observation_spec())
-
 
 def train(config: dict):
+    seed = config["__trial_index__"] + SEED_OFFSET
+    set_seed(seed)
+    gym_env = gym.make("CartPole-v0")
+    gym_env.seed(seed)
+    # gym_env = gym.wrappers.Monitor(gym_env, directory=f"./frozen_lake_{timestamp}", video_callable=lambda x: True)
+
+    env = gym_wrapper.DMEnvFromGym(gym_env)
+    num_obs = env.observation_spec().shape[0]
+    num_act = env.action_spec().num_values
     FEAT_DIM = 200
     feature_fn = NNFeatures(num_obs, feat_dim=FEAT_DIM)
     q_function = SimpleQFunction(
@@ -70,18 +71,30 @@ def train(config: dict):
 
     trainer = Trainer()
     trainer.setup(agent, env)
-    trainer.train(num_iterations=30, max_steps=200, number_rollouts=5)
-    return trainer.validate(num_validation=5, max_steps=200)
+    trainer.train(
+        num_iterations=30,
+        max_steps=200,
+        number_rollouts=5,
+        logging_callback=lambda r: tune.report(reward=r),
+    )
 
 
-wandb.init(
-    project="qreps",
-    entity="sebimarkgraf",
-    sync_tensorboard=True,
-    tags=["cartpole", "qreps_nonparametric"],
-    job_type="hyperparam",
-    config=qreps_config,
-    monitor_gym=True,
+search_alg = HEBOSearch(metric="reward", mode="max")
+re_search_alg = Repeater(search_alg, repeat=5)
+
+# Repeat 2 samples 10 times each.
+analysis = tune.run(
+    train,
+    num_samples=5,
+    config=config,
+    search_alg=re_search_alg,
+    local_dir="/home/temp_store/seb_markgraf/qreps_results",
 )
-train(wandb.config)
-wandb.finish()
+
+print("Best config: ", analysis.get_best_config(metric="reward", mode="max"))
+
+# Get a dataframe for analyzing trial results.
+df = analysis.results_df
+
+
+df.to_csv("qreps_non_parametric_analysis.csv")
